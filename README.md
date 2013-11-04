@@ -1,5 +1,6 @@
 clusterLP-MPI
 =============
+## Overview
 Cluster a protein-ligand system with RMSD using separate sets of atoms for the
 alignment and distance computation. Both the "alignment" and "distance" atoms
 for each frame will be loaded, and in each frame, the cartesian center of the
@@ -26,3 +27,11 @@ controled by setting the `OMP_NUM_THREADS` environment variable. For example,
 $ export OMP_NUM_THREADS=4
 $ mpirun -np 16 clusterLP-MPI <options>
 ```
+
+## Dependencies
+This script requires python, the latest development version of MDTraj available
+[on github](https://github.com/rmcgibbo/mdtraj), numpy, and mpi4py.
+
+## Installation
+No installation is required. Just call the script or move it into your `PATH`
+if you like.
