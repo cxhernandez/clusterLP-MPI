@@ -1,0 +1,326 @@
+#!/usr/bin/env python
+###############################################################################
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 2.1 of the License, or (at your
+# option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+###############################################################################
+"""
+Cluster a protein-ligand system with RMSD using separate sets of atoms for the
+alignment and distance computation. Both the "alignment" and "distance" atoms
+for each frame will be loaded, and in each frame, the cartesian center of the
+alignment atoms is computed and subtracted out of the coordinates of both the
+alignment and distance atoms.
+
+Distances are calculated between two frames by computing the rotation matrix
+which optimally overlays the alignment atoms with one and other, and then
+applying that rotation matrix to the distance atoms in the first frame and
+computing their root-mean-squared deviation w.r.t the other frame.
+
+Clustering is performed with the k-centers algorithm. You may specify the
+termination criterion either by the number of states, or a cutoff distance
+(which ensures that all data points are within that distance of their assigned
+cluster center).
+
+This script uses hybrid MPI/OpenMP paralleism in addition to highly optimized
+SIMD vectorization within the compute kernels. Using multiple MPI processes
+requires running this command using your MPI implementation's process manager,
+e.g. `mpirun`, `mpiexec`, or `aprun`. The number of OpenMP threads can be
+controled by setting the OMP_NUM_THREADS environment variable. (e.g.
+$ export OMP_NUM_THREADS=4; mpirun -np 16 clusterLP-MPI <options>)
+
+Authors: Robert McGibbon
+Contributors:
+"""
+#-----------------------------------
+# Imports
+#-----------------------------------
+from __future__ import print_function
+import os
+import sys
+import glob
+import datetime
+import itertools
+import warnings
+import argparse
+import numpy as np
+try:
+    import mdtraj as md
+    from mdtraj.rmsd import align_array, _allocate_aligned_array
+    import mdtraj.compatibility
+    from mdtraj._rmsd import getMultipleAlignDisplaceRMSDs_atom_major
+except ImportError:
+    print("This package requires the latest development version of MDTraj")
+    print("which can be downloaded from https://github.com/rmcgibbo/mdtraj")
+    sys.exit(1)
+try:
+    from mpi4py import MPI
+except:
+    print("This package requires mpi4py, which can be downloaded")
+    print("from https://pypi.python.org/pypi/mpi4py")
+    sys.exit(1)
+    
+#-----------------------------------
+# Globals
+#-----------------------------------
+COMM = MPI.COMM_WORLD
+RANK = COMM.rank
+SIZE = COMM.size
+
+#-----------------------------------
+# Code
+#-----------------------------------
+
+def printM(message, *args):
+    if RANK == 0:
+        if len(args) == 0:
+            print(message)
+        else:
+            print(message % args)
+
+
+def MPI_vectorAllMaxloc(input):
+    """
+    MaxLoc Reduction. Each rank provides input data, and the return
+    value, on each node, is a triplet containing the rank, index and value of
+    the maximum entry. It's a global argmax.
+    
+    Copied from Tungsten https://github.com/rmcgibbo/tungsten
+    """
+     
+    maxTrajLength = np.array(0)
+    valueIndex = np.dtype([('value',np.float32), ('index', np.int32)])
+    
+    # Share the longest trajectory length with all of the nodes so that
+    # each can properly compute a unique index of
+    # localIndex + rank*maxLengthOfAnyLocalIndex
+    COMM.Allreduce(np.array(len(input)), maxTrajLength, MPI.MAX)
+
+    # local maxloc
+    argmax = np.argmax(input)
+    localMaxLoc = np.array((input[argmax], argmax), dtype=valueIndex)
+    globalMaxLoc = np.zeros(1, dtype=valueIndex)
+
+    # give the local maxloc a globaly-resolvably index
+    localMaxLoc['index'] = localMaxLoc['index'] + RANK * int(maxTrajLength)
+
+    # global maxloc
+    COMM.Allreduce((localMaxLoc, MPI.FLOAT_INT), (globalMaxLoc, MPI.FLOAT_INT), op=MPI.MAXLOC)
+    outRank = int(globalMaxLoc['index']) // int(maxTrajLength)
+    outIndex = int(globalMaxLoc['index']) % int(maxTrajLength)
+    outValue = float(globalMaxLoc['value'])
+
+    return outRank, outIndex, outValue
+
+
+class MPIKCenters(object):
+    def __init__(self, protein_coordinates, ligand_coordinates, n_protein_atoms, n_ligand_atoms):
+        self.n_frames = len(protein_coordinates)
+        assert self.n_frames == len(ligand_coordinates)
+        
+        if not protein_coordinates.ctypes.data % 16 == 0:
+            warnings.warn("Wierd memory alignment failure. Reallocating...")
+            protein_coordinates = align_array(protein_coordinates, major='atom')
+        if not ligand_coordinates.ctypes.data % 16 == 0:
+            warnings.warn("Wierd memory alignment failure. Reallocating...")
+            ligand_coordinates = align_array(ligand_coordinates, major='atom')
+
+        n_frames = len(protein_coordinates)
+        for ci in range(self.n_frames):
+            # Center the coordinates with respect to only the protein indices. the ligand atoms
+            # just come "along for the ride" here.
+            centroid = np.mean(protein_coordinates[ci, :n_protein_atoms, :], axis=0).reshape(1, 3)
+            protein_coordinates[ci, :n_protein_atoms, :] -= np.tile(centroid, (n_protein_atoms, 1))
+            ligand_coordinates[ci, :n_ligand_atoms, :] -= np.tile(centroid, (n_ligand_atoms, 1))
+
+        self.traces = np.einsum(
+            'ijk, ijk -> i', protein_coordinates[:, :n_protein_atoms, :],
+                             protein_coordinates[:, :n_protein_atoms, :])
+
+        self.protein_coordinates = protein_coordinates
+        self.ligand_coordinates = ligand_coordinates
+        self.n_protein_atoms = n_protein_atoms
+        self.n_ligand_atoms = n_ligand_atoms
+
+    def cluster(self, n_states=None, rmsd_cutoff=None):
+        distances = np.empty(self.n_frames, np.float)
+        distances.fill(np.inf)
+        assignments = np.empty((self.n_frames, 2), np.int)
+        centers = []
+
+        if n_states is None:
+            counter = itertools.count()
+        else:
+            counter = range(n_states)
+
+        for i in counter:
+            maxRank, maxIndex, maxValue = MPI_vectorAllMaxloc(distances)
+            if (rmsd_cutoff is not None) and (maxValue < rmsd_cutoff):
+                break
+            printM("Found new center (%d, %d), %f", maxRank, maxIndex, maxValue)
+            new_distances = self.get_RMSDs_from(maxRank, maxIndex)
+
+            new_assignments = (new_distances < distances)            
+            distances[new_assignments] = new_distances[new_assignments]
+            assignments[new_assignments, :] = [maxRank, maxIndex]
+
+            centers.append((maxRank, maxIndex))
+
+        printM("Identified %d clusters", len(centers))
+        return centers
+
+    def get_RMSDs_from(self, targetRank, targetIndex):
+        if targetRank >= SIZE:
+            raise IndexError("No such rank.")
+        if RANK == targetRank and targetIndex >= self.n_frames:
+            raise IndexError("No such index")
+
+        protein_frame = _allocate_aligned_array((1, self.protein_coordinates.shape[1], 3), major='atom')
+        ligand_frame = _allocate_aligned_array((1, self.ligand_coordinates.shape[1], 3), major='atom')
+        target_g = 0
+        if RANK == targetRank:
+            # copy appropriate coordinate into the send buffer
+            protein_frame[0, :, :] = self.protein_coordinates[targetIndex, :]
+            ligand_frame[0, :, :] = self.ligand_coordinates[targetIndex, :]
+            target_g = self.traces[targetIndex]
+
+        COMM.Bcast(protein_frame, root=targetRank)
+        COMM.Bcast(ligand_frame, root=targetRank)
+        COMM.bcast(target_g, root=targetRank)
+
+        rmsds, rotation = getMultipleAlignDisplaceRMSDs_atom_major(
+                    protein_frame, self.protein_coordinates,
+                    np.array([target_g], dtype=np.float32), self.traces,
+                    ligand_frame, self.ligand_coordinates, self.n_protein_atoms,
+                    self.n_ligand_atoms, 0)
+        return rmsds
+
+
+def main(protein_indices, ligand_indices, stride, trajectory_files,
+         topology_file, output_dir, n_states, rmsd_cutoff):
+
+    if len(np.intersect1d(protein_indices, ligand_indices)) != 0:
+        raise ValueError('The set intersection of protein_indices and ligand_indices must be empty.')
+    joint_indices = np.concatenate((protein_indices, ligand_indices))
+    n_protein, n_ligand, n_joint = len(protein_indices), len(ligand_indices), len(joint_indices)
+
+    topology = md.load(topology_file).topology
+    protein_coordinates = []
+    ligand_coordinates = []
+    for f in trajectory_files:
+        loaded_xyz = md.load(f, top=topology, stride=stride, atom_indices=joint_indices).xyz
+        protein_coordinates.append(align_array(loaded_xyz[:, :n_protein, :], major='atom'))
+        ligand_coordinates.append(align_array(loaded_xyz[:, n_protein:, :], major='atom'))
+
+    cumulative_lengths = np.concatenate(([0], np.cumsum([len(f) for f in protein_coordinates])))
+    protein_coordinates = np.concatenate(protein_coordinates)
+    ligand_coordinates = np.concatenate(ligand_coordinates)
+
+    kc = MPIKCenters(protein_coordinates, ligand_coordinates, n_protein, n_ligand)
+    centers = kc.cluster(n_states, rmsd_cutoff)
+    generators = []
+
+    outcsv = os.path.join(output_dir, 'clusters.csv')
+    generatorsfn = os.path.join(output_dir, 'Gens.lh5')
+    printM('\nSaving clusters centers to %s and %s...' % (outcsv, generatorsfn))
+    with open(outcsv, 'w') as f:
+        if RANK == 0:
+            f.write("# Command Line: %s\n" % ' '.join(sys.argv))
+            f.write('# At: %s' % datetime.datetime.now())
+            f.write('# Host: %s\n' % ' '.join(os.uname()))
+            f.write('Trajectory, Frame\n')
+        for i in range(len(centers)):
+            if RANK == 0:
+                req = COMM.irecv(dest=MPI.ANY_SOURCE, tag=i)
+            if RANK == centers[i][0]:
+                trajid = np.max(np.where(centers[i][1] >= cumulative_lengths)[0])
+                frameid = centers[i][1] - cumulative_lengths[trajid]
+                COMM.isend((trajectory_files[trajid], frameid), dest=0, tag=i)
+            
+            if RANK == 0:
+                trj, frame = req.wait()
+                f.write('%s, %d\n' % (trj, frame))
+                t = md.load(trj, stride=frame+1, top=topology)[1]
+                generators.append(t)
+
+    if RANK == 0:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            generators = reduce(lambda a, b: a.join(b), generators)
+            mdtraj.compatibility.save_legacy_hdf(generators, generatorsfn)
+        print('Done saving cluster centers.')
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('-pi', '--protein-indices', required=True,
+                        help='''Path to a file containing the space-separated
+                        zero-based indices of the protein atoms.''')
+    parser.add_argument('-li', '--ligand-indices', required=True, 
+                        help='''Path to a file containing the space-separated
+                        zero-based indices of the ligand atoms.''')
+    parser.add_argument('-td', '--traj-dir', required=True,
+                        help='Path to a directory containing the trajectories')
+    parser.add_argument('-ext', choices=['xtc', 'dcd', 'nc', 'h5', 'lh5', 'binpos', 'trr'],
+                        required=True, help='''File extension of the trajectories. All files
+                        inside `trj-dir` with the supplied extension will be loaded.''')
+    parser.add_argument('-top', '--topology', required=True,
+                        help='''Path to a RCSB PDB file which exactly correspond,
+                        in terms of atom numbering, to the trajectories loaded
+                        from `traj_dir`''')
+    parser.add_argument('-s', '--stride', type=int, default=1, help='''You may
+                        supply a stride to load only every n-th frame from each
+                        trajectory into memory. This can be useful to speed up
+                        clustering time, or if the number of frames in your
+                        dataset is larger than the total available memory for
+                        the job. Default=1''')
+    parser.add_argument('-o', '--output-dir', default='Data', help='''Directory
+                        in which to save output. Default=Data/''')
+    cutoff = parser.add_mutually_exclusive_group(required=True)
+    cutoff.add_argument('-k', '--n-states', type=int, help='''Number of states.
+                        Either this or `rmsd-cutoff` must be specified as a
+                        termination criterion''')
+    cutoff.add_argument('-d', '--rmsd-cutoff', type=float, help='''RMSD cutoff. 
+                        Either this or `rmsd-cutoff` must be specified as a
+                        termination criterion''')
+
+    args = parser.parse_args()
+    if RANK == 0 and not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+    if RANK == 0 and not os.path.isfile(args.protein_indices):
+        parser.error('No such file: %s' % args.protein_indices)
+    if RANK == 0 and not os.path.isfile(args.ligand_indices):
+        parser.error('No such file: %s' % args.ligand_indices)
+    if RANK == 0 and not os.path.isfile(args.topology):
+        parser.error('No such file: %s' % args.topology)
+    #if RANK == 0 and not os.path.isdir(args.traj_dir):
+    #    parser.error('No such directory: %s' % args.traj_dir)
+    if RANK == 0 and args.stride < 1:
+        parser.error('stride must be >= 1')
+                
+    protein_indices = np.loadtxt(args.protein_indices, int)
+    ligand_indices = np.loadtxt(args.ligand_indices, int)
+    query_dir = os.path.join(os.path.expandvars(os.path.expanduser(args.traj_dir)), '*.%s' % args.ext)
+    trajectories = glob.glob(query_dir)
+    if RANK == 0 and len(trajectories) == 0:
+        parser.error('No trajectories found matching %s' % query_dir)
+    if RANK == 0 and protein_indices.ndim != 1:
+        parser.error('protein_indices must be 1 dimensional.')
+    if RANK == 0 and ligand_indices.ndim != 1:
+        parser.error('ligand_indices must be 1 dimensional.')    
+
+    # The trajectories will be interleaved between the MPI ranks.
+    # This is not necessarily the most efficient allocation for memory usage if some of the 
+    # trajectories are much longer than others, but it's close enough and simple.
+    trajectories = trajectories[RANK::SIZE]
+    
+    main(protein_indices, ligand_indices, args.stride, trajectories,
+         args.topology, args.output_dir, args.n_states, args.rmsd_cutoff)
+    
