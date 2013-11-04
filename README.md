@@ -1,3 +1,5 @@
+clusterLP-MPI
+=============
 Cluster a protein-ligand system with RMSD using separate sets of atoms for the
 alignment and distance computation. Both the "alignment" and "distance" atoms
 for each frame will be loaded, and in each frame, the cartesian center of the
@@ -18,5 +20,9 @@ This script uses hybrid MPI/OpenMP paralleism in addition to highly optimized
 SIMD vectorization within the compute kernels. Using multiple MPI processes
 requires running this command using your MPI implementation's process manager,
 e.g. `mpirun`, `mpiexec`, or `aprun`. The number of OpenMP threads can be
-controled by setting the OMP_NUM_THREADS environment variable. (e.g.
-$ export OMP_NUM_THREADS=4; mpirun -np 16 clusterLP-MPI <options>)
+controled by setting the `OMP_NUM_THREADS` environment variable. For example,
+
+```
+$ export OMP_NUM_THREADS=4
+$ mpirun -np 16 clusterLP-MPI <options>
+```
