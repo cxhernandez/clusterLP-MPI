@@ -46,7 +46,11 @@ Contributors:
 from __future__ import print_function
 import os
 import sys
+if sys.version_info < (2, 7):
+    print("Your Python interpreter is too old. Please consider upgrading.")
+    sys.exit(1)
 import glob
+import time
 import datetime
 import itertools
 import warnings
@@ -86,6 +90,16 @@ def printM(message, *args):
         else:
             print(message % args)
 
+class timing(object):
+    "Context manager for printing performance"
+    def __init__(self, name):
+        self.name = name
+    def __enter__(self):
+        self.start = time.time()
+    def __exit__(self,ty, val, tb):
+        end = time.time()
+        print("<RANK %d> PERFORMANCE [%s] : %0.3f seconds" % (RANK, self.name, end-self.start))
+        return False
 
 def MPI_vectorAllMaxloc(input):
     """
@@ -212,50 +226,38 @@ def main(protein_indices, ligand_indices, stride, trajectory_files,
     joint_indices = np.concatenate((protein_indices, ligand_indices))
     n_protein, n_ligand, n_joint = len(protein_indices), len(ligand_indices), len(joint_indices)
 
-    topology = md.load(topology_file).topology
-    protein_coordinates = []
-    ligand_coordinates = []
-    for f in trajectory_files:
-        loaded_xyz = md.load(f, top=topology, stride=stride, atom_indices=joint_indices).xyz
-        protein_coordinates.append(align_array(loaded_xyz[:, :n_protein, :], major='atom'))
-        ligand_coordinates.append(align_array(loaded_xyz[:, n_protein:, :], major='atom'))
+    with timing('Loading Trajectories'):
+        topology = md.load(topology_file).topology
+        protein_coordinates = []
+        ligand_coordinates = []
+        for f in trajectory_files:
+            loaded_xyz = md.load(f, top=topology, stride=stride, atom_indices=joint_indices).xyz
+            protein_coordinates.append(align_array(loaded_xyz[:, :n_protein, :], major='atom'))
+            ligand_coordinates.append(align_array(loaded_xyz[:, n_protein:, :], major='atom'))
 
-    cumulative_lengths = np.concatenate(([0], np.cumsum([len(f) for f in protein_coordinates])))
-    protein_coordinates = np.concatenate(protein_coordinates)
-    ligand_coordinates = np.concatenate(ligand_coordinates)
+        cumulative_lengths = np.concatenate(([0], np.cumsum([len(f) for f in protein_coordinates])))
+        protein_coordinates = np.concatenate(protein_coordinates)
+        ligand_coordinates = np.concatenate(ligand_coordinates)
 
-    kc = MPIKCenters(protein_coordinates, ligand_coordinates, n_protein, n_ligand)
-    centers = kc.cluster(n_states, rmsd_cutoff)
-    generators = []
-
-    outcsv = os.path.join(output_dir, 'clusters.csv')
-    generatorsfn = os.path.join(output_dir, 'Gens.lh5')
-    printM('\nSaving clusters centers to %s and %s...' % (outcsv, generatorsfn))
-    with open(outcsv, 'w') as f:
-        if RANK == 0:
-            f.write("# Command Line: %s\n" % ' '.join(sys.argv))
-            f.write('# At: %s' % datetime.datetime.now())
-            f.write('# Host: %s\n' % ' '.join(os.uname()))
-            f.write('Trajectory, Frame\n')
-        for i in range(len(centers)):
-            if RANK == 0:
-                req = COMM.irecv(dest=MPI.ANY_SOURCE, tag=i)
-            if RANK == centers[i][0]:
-                trajid = np.max(np.where(centers[i][1] >= cumulative_lengths)[0])
-                frameid = centers[i][1] - cumulative_lengths[trajid]
-                COMM.isend((trajectory_files[trajid], frameid), dest=0, tag=i)
-            
-            if RANK == 0:
-                trj, frame = req.wait()
-                f.write('%s, %d\n' % (trj, frame))
-                t = md.load(trj, top=topology)[frame]
-                generators.append(t)
+    with timing('Clustering'):
+        kc = MPIKCenters(protein_coordinates, ligand_coordinates, n_protein, n_ligand)
+        centers = kc.cluster(n_states, rmsd_cutoff)
 
     if RANK == 0:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            generators = reduce(lambda a, b: a.join(b), generators)
-            mdtraj.compatibility.save_legacy_hdf(generators, generatorsfn)
+        outcsv = os.path.join(output_dir, 'clusters.csv')
+        printM('\nSaving clusters centers to %s...' % outcsv)
+        with timing('Saving Output'):
+            with open(outcsv, 'w') as f:
+                f.write("# Command Line: %s\n" % ' '.join(sys.argv))
+                f.write('# At: %s' % datetime.datetime.now())
+                f.write('# Host: %s\n' % ' '.join(os.uname()))
+                f.write('Trajectory, Frame\n')
+                for i in range(len(centers)):
+                    trajid = np.max(np.where(centers[i][1] >= cumulative_lengths)[0])
+                    frame = centers[i][1] - cumulative_lengths[trajid]
+                    trj = trajectory_files[trajid]
+                    f.write('%s, %d\n' % (trj, frame))
+
         print('Done saving cluster centers.')
 
 if __name__ == '__main__':
