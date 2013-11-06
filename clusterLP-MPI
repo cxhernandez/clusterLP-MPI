@@ -248,7 +248,7 @@ def main(protein_indices, ligand_indices, stride, trajectory_files,
             if RANK == 0:
                 trj, frame = req.wait()
                 f.write('%s, %d\n' % (trj, frame))
-                t = md.load(trj, stride=frame+1, top=topology)[1]
+                t = md.load(trj, top=topology)[frame]
                 generators.append(t)
 
     if RANK == 0:
