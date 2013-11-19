@@ -242,23 +242,16 @@ def main(protein_indices, ligand_indices, stride, trajectory_files,
     with timing('Clustering'):
         kc = MPIKCenters(protein_coordinates, ligand_coordinates, n_protein, n_ligand)
         centers = kc.cluster(n_states, rmsd_cutoff)
-
-    with open(out_filename, 'a', 0) as f:
-        if RANK == 0:
-            print('\nSaving clusters centers to %s...' % out_filename)
-            f.write("# Command Line: %s\n" % ' '.join(sys.argv))
-            f.write('# At: %s' % datetime.datetime.now())
-            f.write('# Host: %s\n' % ' '.join(os.uname()))
-            f.write('# With %d MPI parallel processes\n' % SIZE)
-            f.write('Trajectory, Frame\n')
-        COMM.Barrier()
-        for i in range(len(centers)):
-            if RANK == centers[i][0]:
-                trajid = np.max(np.where(centers[i][1] >= cumulative_lengths)[0])
-                frame = centers[i][1] - cumulative_lengths[trajid]
-                trj = trajectory_files[trajid]
-                f.write('%s, %d\n' % (trj, frame))
-        printM('Done saving cluster centers.')
+    out_filename=out_filename[:-4] + '_' + str(RANK) + '.csv'
+    f=open(out_filename, 'w', 0)
+    print('\nSaving clusters centers to %s...' % out_filename)
+    for i in range(len(centers)):
+        if RANK == centers[i][0]:
+            trajid = np.max(np.where(centers[i][1] >= cumulative_lengths)[0])
+            frame = centers[i][1] - cumulative_lengths[trajid]
+            trj = trajectory_files[trajid]
+            f.write('%s, %d\n' % (trj, frame))
+    printM('Done saving cluster centers.')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -296,8 +289,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     try:
-        if RANK == 0 and os.path.exists(args.out):
-            parser.error('File exists: %s' % args.out)
         if RANK == 0 and not os.path.isfile(args.protein_indices):
             parser.error('No such file: %s' % args.protein_indices)
         if RANK == 0 and not os.path.isfile(args.ligand_indices):
