@@ -58,7 +58,6 @@ import argparse
 import numpy as np
 try:
     import mdtraj as md
-    from mdtraj.rmsd import align_array, _allocate_aligned_array
     import mdtraj.compatibility
     from mdtraj._rmsd import getMultipleAlignDisplaceRMSDs_atom_major
 except ImportError:
@@ -140,13 +139,6 @@ class MPIKCenters(object):
         self.n_frames = len(protein_coordinates)
         assert self.n_frames == len(ligand_coordinates)
 
-        if not protein_coordinates.ctypes.data % 16 == 0:
-            warnings.warn("Wierd memory alignment failure. Reallocating...")
-            protein_coordinates = align_array(protein_coordinates, major='atom')
-        if not ligand_coordinates.ctypes.data % 16 == 0:
-            warnings.warn("Wierd memory alignment failure. Reallocating...")
-            ligand_coordinates = align_array(ligand_coordinates, major='atom')
-
         n_frames = len(protein_coordinates)
         for ci in range(self.n_frames):
             # Center the coordinates with respect to only the protein indices. the ligand atoms
@@ -197,8 +189,9 @@ class MPIKCenters(object):
         if RANK == targetRank and targetIndex >= self.n_frames:
             raise IndexError("No such index")
 
-        protein_frame = _allocate_aligned_array((1, self.protein_coordinates.shape[1], 3), major='atom')
-        ligand_frame = _allocate_aligned_array((1, self.ligand_coordinates.shape[1], 3), major='atom')
+        protein_frame = np.zeros((1, self.protein_coordinates.shape[1], 3))
+        ligand_frame = np.zeros((1, self.ligand_coordinates.shape[1], 3))
+
         target_g = 0
         if RANK == targetRank:
             # copy appropriate coordinate into the send buffer
