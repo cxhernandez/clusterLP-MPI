@@ -188,8 +188,8 @@ class MPIKCenters(object):
         if RANK == targetRank and targetIndex >= self.n_frames:
             raise IndexError("No such index")
 
-        protein_frame = np.zeros((1, self.protein_coordinates.shape[1], 3))
-        ligand_frame = np.zeros((1, self.ligand_coordinates.shape[1], 3))
+        protein_frame = np.zeros((1, self.protein_coordinates.shape[1], 3),dtype=np.float32)
+        ligand_frame = np.zeros((1, self.ligand_coordinates.shape[1], 3),dtype=np.float32)
 
         target_g = 0
         if RANK == targetRank:
@@ -224,8 +224,8 @@ def main(protein_indices, ligand_indices, stride, trajectory_files,
         ligand_coordinates = []
         for f in trajectory_files:
             loaded_xyz = md.load(f, top=topology, stride=stride, atom_indices=joint_indices).xyz
-            protein_coordinates.append(np.zeros(loaded_xyz[:, :n_protein, :].shape))
-            ligand_coordinates.append(np.zeros(loaded_xyz[:, n_protein:, :].shape))
+            protein_coordinates.append(np.zeros(loaded_xyz[:, :n_protein, :].shape,dtype=np.float32))
+            ligand_coordinates.append(np.zeros(loaded_xyz[:, n_protein:, :].shape,dtype=np.float32))
 
         cumulative_lengths = np.concatenate(([0], np.cumsum([len(f) for f in protein_coordinates])))
         protein_coordinates = np.concatenate(protein_coordinates)
