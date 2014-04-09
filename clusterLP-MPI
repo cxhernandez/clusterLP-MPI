@@ -255,7 +255,7 @@ if __name__ == '__main__':
                         zero-based indices of the ligand atoms.''')
     parser.add_argument('-td', '--traj-dir', required=True,
                         help='Path to a directory containing the trajectories')
-    parser.add_argument('-ext', choices=['xtc', 'dcd', 'nc', 'h5', 'lh5', 'binpos', 'trr'],
+    parser.add_argument('-ext', choices=['xtc', 'netcdf', 'dcd', 'nc', 'h5', 'lh5', 'binpos', 'trr'],
                         required=True, help='''File extension of the trajectories. All files
                         inside `trj-dir` with the supplied extension will be loaded.''')
     parser.add_argument('-top', '--topology', required=True,
