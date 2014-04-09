@@ -58,7 +58,6 @@ import argparse
 import numpy as np
 try:
     import mdtraj as md
-    import mdtraj.compatibility
     from mdtraj._rmsd import getMultipleAlignDisplaceRMSDs_atom_major
 except ImportError:
     print("This package requires the latest development version of MDTraj")
