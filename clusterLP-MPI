@@ -316,7 +316,7 @@ class MPIKCenters(object):
         COMM.bcast(frame, root=targetRank)
         COMM.bcast(ref, root=targetRank)
         
-        rmsds = rmsd_kabsch(frame[0,:,:],ref[0,:,:])
+        rmsds = np.array(rmsd_kabsch(frame[0,:,:],ref[0,:,:]))
         
         return rmsds
 
