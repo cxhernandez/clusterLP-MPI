@@ -80,12 +80,6 @@ SIZE = COMM.size
 #-----------------------------------
 # Code
 #-----------------------------------
-def chunks(l, n):
-    """ Yield successive n-sized chunks from l.
-    """
-    for i in xrange(0, len(l), n):
-        yield l[i:i+n]
-
 def printM(message, *args):
     if RANK == 0:
         if len(args) == 0:
@@ -300,8 +294,8 @@ if __name__ == '__main__':
     # This is not necessarily the most efficient allocation for memory usage if some of the
     # trajectories are much longer than others, but it's close enough and simple.
     printM('loading %s trajectories' % len(trajectories))
-    frames = chunks(len(trajectories),SIZE)
-    trajectories = trajectories[frames[RANK]]
+    
+    traj = trajectories[RANK::SIZE]
 
-    main(protein_indices, ligand_indices, args.stride, trajectories,
+    main(protein_indices, ligand_indices, args.stride, traj,
          args.topology, args.out, args.n_states, args.rmsd_cutoff)
