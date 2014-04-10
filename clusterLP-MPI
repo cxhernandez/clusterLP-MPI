@@ -43,7 +43,7 @@ Contributors: Morgan Lawrenz, Carlos Hernandez
 #-----------------------------------
 # Imports
 #-----------------------------------
-from __future__ import print_function, division
+from __future__ import print_function
 import os
 import sys
 if sys.version_info < (2, 7):
@@ -56,11 +56,9 @@ import itertools
 import warnings
 import argparse
 import numpy as np
-import scipy.optimize
 
 try:
     import mdtraj as md
-    from mdtraj.utils import ensure_type
 except ImportError:
     print("This package requires the latest development version of MDTraj")
     print("which can be downloaded from https://github.com/rmcgibbo/mdtraj")
@@ -82,139 +80,6 @@ SIZE = COMM.size
 #-----------------------------------
 # Code
 #-----------------------------------
-
-
-class Transformation(object):
-    """Operator capable of rotating and translating a conformation
-
-    Parameters
-    ----------
-    rotation : np.array, shape=(3,3)
-        Rotation matrix
-    rotation : np.array, shape=(3)
-        Translation vector
-    """
-    def __init__(self, rotation, translation):
-        self.rotation = rotation
-        self.translation = translation
-
-    def transform(self, coordinates):
-        """Apply an affine transformation to a set of coordinates.
-
-        Parameters
-        ----------
-        coordinates : ndarray, shape = (n_atoms, 3)
-            xyz coordinates of a `single` frame.
-
-        Returns
-        -------
-        mapped_coordinates : ndarray, shape = (n_atoms, 3)
-            xyz coordinates after being rotated and translated
-
-        """
-        mu1 = coordinates.mean(0)
-        return coordinates.dot(self.rotation) + self.translation - mu1.dot(self.rotation)
-
-    def __call__self(self, coordinates):
-        return self.transform(coordinates)
-
-
-def compute_transformation(mobile, target):
-    """Returns a Transformation object to align mobile onto target.
-
-    Parameters
-    ----------
-    mobile : ndarray, shape = (n_atoms, 3)
-        xyz coordinates of a `single` frame, to be aligned onto target.
-    target : ndarray, shape = (n_atoms, 3)
-        xyz coordinates of a `single` frame
-
-    Returns
-    -------
-    T : Transformation aligning mobile to target.
-    """
-    translation, rotation = compute_translation_and_rotation(mobile, target)
-    return Transformation(rotation, translation)
-
-
-def transform(mobile, target):
-    """Align mobile onto target and return transformed coordinates.
-
-    Parameters
-    ----------
-    mobile : ndarray, shape = (n_atoms, 3)
-        xyz coordinates of a `single` frame, to be aligned onto target.
-    target : ndarray, shape = (n_atoms, 3)
-        xyz coordinates of a `single` frame
-
-    Returns
-    -------
-    mobile_prime : ndarray, shape = (n_atoms, 3)
-        Transformed coordinates of mobile, optimally aligned to target.
-    """
-    T = compute_transformation(mobile, target)
-    mobile_prime = T.transform(mobile)
-    return mobile_prime
-
-
-def compute_translation_and_rotation(mobile, target):
-    """Returns the translation and rotation mapping mobile onto target.
-
-    Parameters
-    ----------
-    mobile : ndarray, shape = (n_atoms, 3)
-        xyz coordinates of a `single` frame, to be aligned onto target.
-    target : ndarray, shape = (n_atoms, 3)
-        xyz coordinates of a `single` frame
-
-    Returns
-    -------
-    translation : ndarray, shape=(3,)
-        Difference between the centroids of the two conformations
-    rotation : ndarray, shape=(3,3)
-        Rotation matrix to apply to mobile to carry out the transformation.
-    """
-
-    ensure_type(mobile, 'float', 2, 'mobile', warn_on_cast=False, shape=(None, 3))
-    ensure_type(target, 'float', 2, 'target', warn_on_cast=False, shape=(target.shape[0], 3))
-
-    mu1 = mobile.mean(0)
-    mu2 = target.mean(0)
-
-    translation = mu2
-
-    mobile = mobile - mu1
-    target = target - mu2
-
-    correlation_matrix = np.dot(np.transpose(mobile), target)
-    V, S, W_tr = np.linalg.svd(correlation_matrix)
-    is_reflection = (np.linalg.det(V) * np.linalg.det(W_tr)) < 0.0
-    if is_reflection:
-        V[:, -1] = -V[:, -1]
-    rotation = np.dot(V, W_tr)
-
-    return translation, rotation
-
-
-def rmsd_kabsch(xyz1, xyz2):
-    """Returns the RMSD distance between conformations xyz1 and xyz2.
-
-    Parameters
-    ----------
-    xyz1 : ndarray, shape = (n_atoms, 3)
-        xyz1 coordinates of a SINGLE frame
-    xyz2 : ndarray, shape = (n_atoms, 3)
-        xyz2 coordinates of a SINGLE frame
-    Returns
-    -------
-    rmsd : float
-        RMSD between xyz1 and xyz2
-    """
-    xyz1_prime = transform(xyz1, xyz2)
-    delta = xyz1_prime - xyz2
-    rmsd = (delta ** 2.0).sum(1).mean() ** 0.5
-    return rmsd
-
 def printM(message, *args):
     if RANK == 0:
         if len(args) == 0:
@@ -319,8 +184,7 @@ class MPIKCenters(object):
         return rmsds
 
 
-def main(protein_indices, ligand_indices, stride, trajectory_files,
-         topology_file, out_filename, n_states, rmsd_cutoff):
+def main(protein_indices, ligand_indices, stride, trajectory_files,topology_file, out_filename, n_states, rmsd_cutoff):
 
     if len(np.intersect1d(protein_indices, ligand_indices)) != 0:
         raise ValueError('The set intersection of protein_indices and ligand_indices must be empty.')
@@ -330,10 +194,10 @@ def main(protein_indices, ligand_indices, stride, trajectory_files,
     with timing('Loading Trajectories'):
         topology = md.load(topology_file)
         traj = md.load(trajectory_files[0], top=topology, stride=stride, atom_indices=joint_indices)
-        cumulative_lengths = np.zeros(1)
+        cumulative_lengths = np.zeros(1,dtype=np.int)
         for f in trajectory_files[1:]:
             traj = traj + md.load(f, top=topology, stride=stride, atom_indices=joint_indices)
-            cumulative_lengths = np.hstack((cumulative_lengths,traj.n_frames)
+            cumulative_lengths = np.hstack((cumulative_lengths,traj.n_frames))
 
     with timing('Clustering'):
         kc = MPIKCenters(traj, topology, n_protein, n_ligand)
