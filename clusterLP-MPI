@@ -176,11 +176,18 @@ class MPIKCenters(object):
             raise IndexError("No such index")
             
         if RANK == targetRank:
-            frame = targetIndex
+            frame = self.trajectory[frame]
+            topology = self.topology
+            protein_indices = self.protein_indices
+            ligand_indices = self.ligand_indices
+            
             
         COMM.bcast(frame, root=targetRank)
+        COMM.bcast(topology, root=targetRank)
+        COMM.bcast(protein_indices, root=targetRank)
+        COMM.bcast(ligand_indices, root=targetRank)
         
-        rmsds = md.rmsd(target=self.trajectory[frame].superpose(self.topology,atom_indices=self.protein_indices),reference=self.topology,atom_indices=self.ligand_indices)
+        rmsds = md.rmsd(target=frame.superpose(topology,atom_indices=protein_indices),reference=topology,atom_indices=ligand_indices)
         
         return rmsds
 
