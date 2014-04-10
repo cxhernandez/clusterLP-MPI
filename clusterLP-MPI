@@ -134,26 +134,12 @@ def MPI_vectorAllMaxloc(input):
 
 
 class MPIKCenters(object):
-    def __init__(self, protein_coordinates, ligand_coordinates, n_protein_atoms, n_ligand_atoms):
-        self.n_frames = len(protein_coordinates)
-        assert self.n_frames == len(ligand_coordinates)
+    def __init__(self, traj, top, protein_indices, ligand_indices):
 
-        n_frames = len(protein_coordinates)
-        for ci in range(self.n_frames):
-            # Center the coordinates with respect to only the protein indices. the ligand atoms
-            # just come "along for the ride" here.
-            centroid = np.mean(protein_coordinates[ci, :n_protein_atoms, :], axis=0).reshape(1, 3)
-            protein_coordinates[ci, :n_protein_atoms, :] -= np.tile(centroid, (n_protein_atoms, 1))
-            ligand_coordinates[ci, :n_ligand_atoms, :] -= np.tile(centroid, (n_ligand_atoms, 1))
-
-        self.traces = np.einsum(
-            'ijk, ijk -> i', protein_coordinates[:, :n_protein_atoms, :],
-                             protein_coordinates[:, :n_protein_atoms, :])
-
-        self.protein_coordinates = protein_coordinates
-        self.ligand_coordinates = ligand_coordinates
-        self.n_protein_atoms = n_protein_atoms
-        self.n_ligand_atoms = n_ligand_atoms
+        self.traj = traj
+        self.top = top
+        self.protein_indices = protein_indices
+        self.ligand_indices = ligand_indices
 
     def cluster(self, n_states=None, rmsd_cutoff=None):
         distances = np.empty(self.n_frames, np.float)
@@ -187,26 +173,14 @@ class MPIKCenters(object):
             raise IndexError("No such rank.")
         if RANK == targetRank and targetIndex >= self.n_frames:
             raise IndexError("No such index")
-
-        protein_frame = np.zeros((1, self.protein_coordinates.shape[1], 3),dtype=np.float32)
-        ligand_frame = np.zeros((1, self.ligand_coordinates.shape[1], 3),dtype=np.float32)
-
-        target_g = 0
+            
         if RANK == targetRank:
-            # copy appropriate coordinate into the send buffer
-            protein_frame[0, :, :] = self.protein_coordinates[targetIndex, :]
-            ligand_frame[0, :, :] = self.ligand_coordinates[targetIndex, :]
-            target_g = self.traces[targetIndex]
-
-        COMM.Bcast(protein_frame, root=targetRank)
-        COMM.Bcast(ligand_frame, root=targetRank)
-        COMM.bcast(target_g, root=targetRank)
-
-        rmsds, rotation = getMultipleAlignDisplaceRMSDs_atom_major(
-                    protein_frame, self.protein_coordinates,
-                    np.array([target_g], dtype=np.float32), self.traces,
-                    ligand_frame, self.ligand_coordinates, self.n_protein_atoms,
-                    self.n_ligand_atoms, 0)
+            frame = self.traj[targetIndex]
+            
+        COMM.Bcast(frame, root=targetRank)
+        
+        rmsds = md.rmsd(target = frame.superpose(self.top,atom_indices=self.protein_indices),top=top, atom_indices=self.ligand_indices,precentered=True)
+        
         return rmsds
 
 
@@ -220,19 +194,12 @@ def main(protein_indices, ligand_indices, stride, trajectory_files,
 
     with timing('Loading Trajectories'):
         topology = md.load(topology_file).topology
-        protein_coordinates = []
-        ligand_coordinates = []
-        for f in trajectory_files:
-            loaded_xyz = md.load(f, top=topology, stride=stride, atom_indices=joint_indices).xyz
-            protein_coordinates.append(np.zeros(loaded_xyz[:, :n_protein, :].shape,dtype=np.float32))
-            ligand_coordinates.append(np.zeros(loaded_xyz[:, n_protein:, :].shape,dtype=np.float32))
-
-        cumulative_lengths = np.concatenate(([0], np.cumsum([len(f) for f in protein_coordinates])))
-        protein_coordinates = np.concatenate(protein_coordinates)
-        ligand_coordinates = np.concatenate(ligand_coordinates)
+        traj = md.load(trajectory_files[0], top=topology, stride=stride, atom_indices=joint_indices)
+        for f in trajectory_files[1:]:
+            traj = traj + md.load(f, top=topology, stride=stride, atom_indices=joint_indices)
 
     with timing('Clustering'):
-        kc = MPIKCenters(protein_coordinates, ligand_coordinates, n_protein, n_ligand)
+        kc = MPIKCenters(traj, protein_indices, ligand_indices)
         centers = kc.cluster(n_states, rmsd_cutoff)
     out_filename=out_filename[:-4] + '_' + str(RANK) + '.csv'
     f=open(out_filename, 'w', 0)
@@ -294,8 +261,8 @@ if __name__ == '__main__':
             COMM.Abort()
         exit()
 
-    protein_indices = np.loadtxt(args.protein_indices, int)
-    ligand_indices = np.loadtxt(args.ligand_indices, int)
+    protein_indices = np.sort(np.loadtxt(args.protein_indices, int))
+    ligand_indices = np.sort(np.loadtxt(args.ligand_indices, int))
     query_dir = os.path.join(os.path.expandvars(os.path.expanduser(args.traj_dir)), '*.%s' % args.ext)
     trajectories = glob.glob(query_dir)
 
