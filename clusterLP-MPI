@@ -178,7 +178,7 @@ class MPIKCenters(object):
         if RANK == targetRank:
             frame = targetIndex
             
-        COMM.Bcast(frame, root=targetRank)
+        COMM.bcast(frame, root=targetRank)
         
         rmsds = md.rmsd(target=self.trajectory[frame].superpose(self.topology,atom_indices=self.protein_indices),reference=self.topology,atom_indices=self.ligand_indices)
         
