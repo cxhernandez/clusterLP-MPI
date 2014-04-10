@@ -330,10 +330,10 @@ def main(protein_indices, ligand_indices, stride, trajectory_files,
     with timing('Loading Trajectories'):
         topology = md.load(topology_file)
         traj = md.load(trajectory_files[0], top=topology, stride=stride, atom_indices=joint_indices)
-        cumulative_lengths = [0]
+        cumulative_lengths = np.zeros(1)
         for f in trajectory_files[1:]:
             traj = traj + md.load(f, top=topology, stride=stride, atom_indices=joint_indices)
-            cumulative_lengths.append(traj.n_frames)
+            cumulative_lengths = np.hstack((cumulative_lengths,traj.n_frames)
 
     with timing('Clustering'):
         kc = MPIKCenters(traj, topology, n_protein, n_ligand)
