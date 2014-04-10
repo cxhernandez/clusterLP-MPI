@@ -137,6 +137,7 @@ class MPIKCenters(object):
     def __init__(self, traj, topology, protein_indices, ligand_indices):
 
         self.traj = traj
+        self.n_frames = traj.n_frames
         self.topology = topology
         self.protein_indices = protein_indices
         self.ligand_indices = ligand_indices
