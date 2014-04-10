@@ -330,7 +330,7 @@ def main(protein_indices, ligand_indices, stride, trajectory_files,
     n_protein, n_ligand, n_joint = len(protein_indices), len(ligand_indices), len(joint_indices)
 
     with timing('Loading Trajectories'):
-        topology = md.load(topology_file).topology
+        topology = md.load(topology_file)
         traj = md.load(trajectory_files[0], top=topology, stride=stride, atom_indices=joint_indices)
         for f in trajectory_files[1:]:
             traj = traj + md.load(f, top=topology, stride=stride, atom_indices=joint_indices)
