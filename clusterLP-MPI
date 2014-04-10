@@ -136,7 +136,7 @@ def MPI_vectorAllMaxloc(input):
 class MPIKCenters(object):
     def __init__(self, traj, topology, protein_indices, ligand_indices):
 
-        self.traj = traj
+        self.trajectory = traj
         self.n_frames = traj.n_frames
         self.topology = topology
         self.protein_indices = protein_indices
@@ -176,11 +176,11 @@ class MPIKCenters(object):
             raise IndexError("No such index")
             
         if RANK == targetRank:
-            frame = self.traj[targetIndex]
+            frame = targetIndex
             
         COMM.Bcast(frame, root=targetRank)
         
-        rmsds = md.rmsd(target = frame.superpose(self.top,atom_indices=self.protein_indices),top=self.topology, atom_indices=self.ligand_indices,precentered=True)
+        rmsds = md.rmsd(target=self.trajectory[frame].superpose(self.topology,atom_indices=self.protein_indices),reference=self.topology,atom_indices=self.ligand_indices)
         
         return rmsds
 
