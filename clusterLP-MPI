@@ -310,11 +310,11 @@ class MPIKCenters(object):
             raise IndexError("No such index")
             
         if RANK == targetRank:
-            frame = self.trajectory[targetIndex]
+            frame = targetIndex
             
         COMM.bcast(frame, root=targetRank)
         
-        rmsds = md.rmsd(frame,self.trajectory,atom_indices=self.ligand_indices,precentered=True)
+        rmsds = md.rmsd(self.trajectory[frame],self.trajectory,atom_indices=self.ligand_indices,precentered=True)
         
         return rmsds
 
