@@ -176,7 +176,7 @@ class MPIKCenters(object):
             raise IndexError("No such index")
             
         if RANK == targetRank:
-            frame = self.trajectory[frame]
+            frame = self.trajectory[targetIndex]
             topology = self.topology
             protein_indices = self.protein_indices
             ligand_indices = self.ligand_indices
