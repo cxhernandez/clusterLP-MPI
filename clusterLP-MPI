@@ -137,6 +137,8 @@ class MPIKCenters(object):
 
         self.n_frames = traj.n_frames
         self.topology = topology
+        self.empty = topology
+        self.empty.xyz = np.zeros(topology.xyz.shape)
         self.protein_indices = range(n_protein)
         self.ligand_indices = range(n_protein,n_protein+n_ligand)
         self.trajectory = traj.superpose(topology,atom_indices=self.protein_indices)
@@ -169,7 +171,7 @@ class MPIKCenters(object):
         return centers
 
     def get_RMSDs_from(self, targetRank, targetIndex):
-        frame = []
+        frame = None
         if targetRank >= SIZE:
             raise IndexError("No such rank.")
         if RANK == targetRank and targetIndex >= self.n_frames:
@@ -182,6 +184,8 @@ class MPIKCenters(object):
         
         if frame:
             rmsds = md.rmsd(self.trajectory,self.trajectory[frame],atom_indices=self.ligand_indices,precentered=True)
+        else:
+            rmsds = md.rmsd(self.trajectory,self.empty,atom_indices=self.ligand_indices,precentered=True)
         
         return rmsds
 
