@@ -134,10 +134,10 @@ def MPI_vectorAllMaxloc(input):
 
 
 class MPIKCenters(object):
-    def __init__(self, traj, top, protein_indices, ligand_indices):
+    def __init__(self, traj, topology, protein_indices, ligand_indices):
 
         self.traj = traj
-        self.top = top
+        self.topology = topology
         self.protein_indices = protein_indices
         self.ligand_indices = ligand_indices
 
@@ -179,7 +179,7 @@ class MPIKCenters(object):
             
         COMM.Bcast(frame, root=targetRank)
         
-        rmsds = md.rmsd(target = frame.superpose(self.top,atom_indices=self.protein_indices),top=top, atom_indices=self.ligand_indices,precentered=True)
+        rmsds = md.rmsd(target = frame.superpose(self.top,atom_indices=self.protein_indices),top=self.topology, atom_indices=self.ligand_indices,precentered=True)
         
         return rmsds
 
@@ -199,7 +199,7 @@ def main(protein_indices, ligand_indices, stride, trajectory_files,
             traj = traj + md.load(f, top=topology, stride=stride, atom_indices=joint_indices)
 
     with timing('Clustering'):
-        kc = MPIKCenters(traj, protein_indices, ligand_indices)
+        kc = MPIKCenters(traj, topology, protein_indices, ligand_indices)
         centers = kc.cluster(n_states, rmsd_cutoff)
     out_filename=out_filename[:-4] + '_' + str(RANK) + '.csv'
     f=open(out_filename, 'w', 0)
