@@ -190,36 +190,37 @@ class MPIKCenters(object):
         return rmsds
 
 
-def main(protein_indices, ligand_indices, stride, trajectory_files,topology_file, out_filename, n_states, rmsd_cutoff):
-    if len(trajectory_files) > 0:
-        if len(np.intersect1d(protein_indices, ligand_indices)) != 0:
-            raise ValueError('The set intersection of protein_indices and ligand_indices must be empty.')
-        joint_indices = np.concatenate((protein_indices, ligand_indices))
-        n_protein, n_ligand, n_joint = len(protein_indices), len(ligand_indices), len(joint_indices)
-    
-        with timing('Loading Trajectories'):
-            topology = md.load(topology_file)
-            for i,f in enumerate(trajectory_files):
-                if i is 0:
-                    traj = md.load(f, top=topology, atom_indices=joint_indices)
-                    cumulative_lengths = np.hstack((np.zeros(1),traj.n_frames))
-                else:
-                    traj = traj + md.load(f, top=topology, stride=stride, atom_indices=joint_indices)
-                    cumulative_lengths = np.hstack((cumulative_lengths,traj.n_frames))
-    
-        with timing('Clustering'):
-            kc = MPIKCenters(traj, topology, n_protein, n_ligand)
-            centers = kc.cluster(n_states, rmsd_cutoff)
-        out_filename=out_filename[:-4] + '_' + str(RANK) + '.csv'
-        f=open(out_filename, 'w', 0)
-        print('\nSaving clusters centers to %s...' % out_filename)
-        for i in range(len(centers)):
-            if RANK == centers[i][0]:
-                trajid = np.max(np.where(centers[i][1] >= cumulative_lengths)[0])
-                frame = centers[i][1] - cumulative_lengths[trajid]
-                trj = trajectory_files[trajid]
-                f.write('%s, %d\n' % (trj, frame))
-        printM('Done saving cluster centers.')
+def main(protein_indices, ligand_indices, stride, trajectory_files, topology_file, out_filename, n_states, rmsd_cutoff):
+
+    if len(np.intersect1d(protein_indices, ligand_indices)) != 0:
+        raise ValueError('The set intersection of protein_indices and ligand_indices must be empty.')
+    joint_indices = np.concatenate((protein_indices, ligand_indices))
+    n_protein, n_ligand, n_joint = len(protein_indices), len(ligand_indices), len(joint_indices)
+
+    with timing('Loading Trajectories'):
+        load =  md.load
+        topology = load(topology_file)
+        for i,f in enumerate(trajectory_files):
+            if i is 0:
+                traj = load(f, top=topology, atom_indices=joint_indices)
+                cumulative_lengths = np.hstack((np.zeros(1),traj.n_frames))
+            else:
+                traj = traj + load(f, top=topology, stride=stride, atom_indices=joint_indices)
+                cumulative_lengths = np.hstack((cumulative_lengths,traj.n_frames))
+
+    with timing('Clustering'):
+        kc = MPIKCenters(traj, topology, n_protein, n_ligand)
+        centers = kc.cluster(n_states, rmsd_cutoff)
+    out_filename=out_filename[:-4] + '_' + str(RANK) + '.csv'
+    f=open(out_filename, 'w', 0)
+    print('\nSaving clusters centers to %s...' % out_filename)
+    for i in range(len(centers)):
+        if RANK == centers[i][0]:
+            trajid = np.max(np.where(centers[i][1] >= cumulative_lengths)[0])
+            frame = centers[i][1] - cumulative_lengths[trajid]
+            trj = trajectory_files[trajid]
+            f.write('%s, %d\n' % (trj, frame))
+    printM('Done saving cluster centers.')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
