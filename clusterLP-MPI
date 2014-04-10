@@ -293,6 +293,7 @@ if __name__ == '__main__':
     # The trajectories will be interleaved between the MPI ranks.
     # This is not necessarily the most efficient allocation for memory usage if some of the
     # trajectories are much longer than others, but it's close enough and simple.
+    printM('loading %s trajectories' % len(trajectories))
     trajectories = trajectories[RANK::SIZE]
 
     main(protein_indices, ligand_indices, args.stride, trajectories,
