@@ -194,9 +194,8 @@ def main(protein_indices, ligand_indices, stride, trajectory_files,topology_file
     with timing('Loading Trajectories'):
         topology = md.load(topology_file)
         traj = md.load(trajectory_files[0], top=topology, stride=stride, atom_indices=joint_indices)
-        cumulative_lengths = np.zeros(1,dtype=np.int)
+        cumulative_lengths = np.hstack(np.zeros(1,dtype=np.int),traj.n_frames))
         for f in trajectory_files[1:]:
-            printM('loading: %s' % f)
             traj = traj + md.load(f, top=topology, stride=stride, atom_indices=joint_indices)
             cumulative_lengths = np.hstack((cumulative_lengths,traj.n_frames))
 
