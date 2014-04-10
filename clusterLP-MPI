@@ -135,13 +135,13 @@ def MPI_vectorAllMaxloc(input):
 class MPIKCenters(object):
     def __init__(self, traj, topology, n_protein, n_ligand):
 
-        self.n_frames = traj.n_frames-1
+        self.n_frames = traj.n_frames
         self.topology = topology
         self.empty = traj[0]
         self.empty.xyz = np.zeros(self.empty.xyz.shape)
         self.protein_indices = range(n_protein)
         self.ligand_indices = range(n_protein,n_protein+n_ligand)
-        self.trajectory = traj.superpose(topology[1:],atom_indices=self.protein_indices)
+        self.trajectory = traj.superpose(topology,atom_indices=self.protein_indices)
 
     def cluster(self, n_states=None, rmsd_cutoff=None):
         distances = np.empty(self.n_frames, np.float)
@@ -199,11 +199,14 @@ def main(protein_indices, ligand_indices, stride, trajectory_files,topology_file
 
     with timing('Loading Trajectories'):
         topology = md.load(topology_file)
-        traj = md.load(np.zeros(topology.xyz.shape), top=topology, atom_indices=joint_indices)
-        cumulative_lengths = np.zeros(1,dtype=np.int)
-        for f in trajectory_files:
-            traj = traj + md.load(f, top=topology, stride=stride, atom_indices=joint_indices)
-            cumulative_lengths = np.hstack((cumulative_lengths,traj.n_frames-1))
+        traj = md.load(trajectory_files[0], top=topology, atom_indices=joint_indices)
+        cumulative_lengths = np.hstack((np.zeros(1),traj.n_frames))
+        for f in trajectory_files[:-1]:
+            try:
+                traj = traj + md.load(f, top=topology, stride=stride, atom_indices=joint_indices)
+                cumulative_lengths = np.hstack((cumulative_lengths,traj.n_frames))
+            except:
+                pass
 
     with timing('Clustering'):
         kc = MPIKCenters(traj, topology, n_protein, n_ligand)
