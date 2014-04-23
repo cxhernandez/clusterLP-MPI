@@ -1,18 +1,4 @@
 #!/usr/bin/env python
-###############################################################################
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
-# the Free Software Foundation, either version 2.1 of the License, or (at your
-# option) any later version.
-#
-# This program is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more
-# details.
-#
-# You should have received a copy of the GNU Lesser General Public License
-# along with this program. If not, see <http://www.gnu.org/licenses/>.
-###############################################################################
 """
 Assign clusters to a protein-ligand system with RMSD using separate sets of atoms for the
 alignment and distance computation.
@@ -96,7 +82,7 @@ def assign(trajectory, gens, pi, li):
         rmsds[i, :] = md.RMSD(trajectory, gen, atom_indices = li, precentered=True)
     return rmsds.argmin(axis = 0), rmsds.min(axis = 0)
 
-def main(gens, trajectories, idx, li, pi, topology):
+def main(gens, trajectories, idx, li, pi, topology, directory, ext):
     
     top = topology.topology.copy()
     topology.restrict_atoms(idx)
@@ -116,24 +102,26 @@ def main(gens, trajectories, idx, li, pi, topology):
             n_frames.append(traj.n_frames)
             
     COMM.Barrier()
-    all_assignments, all_distances, all_n_frames, all_n_traj = COMM.gather(assignments, root = 0), COMM.gather(distances, root = 0), COMM.gather(n_frames, root = 0), COMM.gather(n_traj, root = 0)
+    all_assignments, all_distances, all_n_frames, all_n_traj, all_trajectory_files = COMM.gather(assignments, root = 0), COMM.gather(distances, root = 0), COMM.gather(n_frames, root = 0), COMM.gather(n_traj, root = 0), COMM.gather(trajectories, root = 0)
     
     if RANK == 0:
         
         n_trajectories, max_frames = np.sum(all_n_traj), np.max(np.max(all_n_frames))
         A = -1*np.ones((n_trajectories, max_frames))
         AD = -1*np.ones((n_trajectories, max_frames))
+        all_trajectory_files = list(itertools.chain.from_iterable(all_trajectory_files))
+        order = [all_trajectory_files.index(i) for i in glob.glob(directory + "/*." + ext)]
+        all_assignments = list(itertools.chain.from_iterable(all_assignments))
+        all_distances = list(itertools.chain.from_iterable(all_distances))
         
         with timing('Writing assignments...'):
-            
-            for i in range(SIZE):
-                for j in range(all_n_traj[i]):
-                    A[i, :len(all_assignments[i][j])-1] = all_assignments[i][j]
-                    AD[i, :len(all_distances[i][j])-1] = all_distances[i][j]
+            for j, i in enumerate(order):
+                    A[j, :len(all_assignments[i])-1] = all_assignments[i]
+                    AD[j, :len(all_distances[i])-1] = all_distances[i]
                     
-            os.makedirs('./Data/', exist_ok = True)        
-            md.io.saveh('./Data/Assignments.h5', A, completed_trajs = np.ones(n_trajectories, dtype=bool))
-            md.io.saveh('./Data/Assignments.h5.distances', AD, completed_trajs = np.ones(n_trajectories, dtype=bool))
+            os.makedirs('Data/', exist_ok = True)        
+            md.io.saveh('Data/Assignments.h5', A, completed_trajs = np.ones(n_trajectories, dtype=bool))
+            md.io.saveh('Data/Assignments.h5.distances', AD, completed_trajs = np.ones(n_trajectories, dtype=bool))
             
         printM('Done!')
                 
@@ -177,4 +165,4 @@ if __name__ == "__main__":
     
     printM('Starting...')
     
-    main(gens, trajectories, idx, li, pi, topology)
+    main(gens, trajectories, idx, li, pi, topology, options['dir'], options['ext'])
