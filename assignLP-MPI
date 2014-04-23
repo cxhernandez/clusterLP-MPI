@@ -117,9 +117,9 @@ def main(gens, trajectories, idx, li, pi, topology):
                     A[i, :len(all_assignments[i][j])-1] = all_assignments[i][j]
                     AD[i, :len(all_distances[i][j])-1] = all_distances[i][j]
                     
-            os.makedirs('Data/', exist_ok = True)        
-            md.io.saveh('Data/Assignments.h5', A, completed_trajs = np.ones(n_trajectories, dtype=bool))
-            md.io.saveh('Data/Assignments.h5.distances', AD, completed_trajs = np.ones(n_trajectories, dtype=bool))
+            os.makedirs('./Data/', exist_ok = True)        
+            md.io.saveh('./Data/Assignments.h5', A, completed_trajs = np.ones(n_trajectories, dtype=bool))
+            md.io.saveh('./Data/Assignments.h5.distances', AD, completed_trajs = np.ones(n_trajectories, dtype=bool))
             
         printM('Done!')
                 
