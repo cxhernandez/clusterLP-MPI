@@ -38,7 +38,7 @@ controled by setting the OMP_NUM_THREADS environment variable. (e.g.
 $ export OMP_NUM_THREADS=4; mpirun -np 16 clusterLP-MPI <options>)
 
 Authors: Robert McGibbon
-Contributors: Morgan Lawrenz, Carlos Hernandez
+Contributors: Morgan Lawrenz, Carlos Xavier Hernández
 """
 #-----------------------------------
 # Imports
