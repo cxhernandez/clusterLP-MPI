@@ -137,7 +137,6 @@ class MPIKCenters(object):
 
         self.n_frames = traj.n_frames
         self.topology = topology
-        self.empty.xyz = np.zeros(self.empty.xyz.shape)
         self.protein_indices = range(n_protein)
         self.ligand_indices = range(n_protein,n_protein+n_ligand)
         self.trajectory = traj.superpose(topology,atom_indices=self.protein_indices)
