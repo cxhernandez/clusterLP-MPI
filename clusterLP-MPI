@@ -138,6 +138,8 @@ class MPIKCenters(object):
 
         self.n_frames = traj.n_frames
         self.topology = topology
+        self.empty = traj[0]
+        self.empty.xyz = np.zeros(self.empty.xyz.shape)
         self.protein_indices = range(n_protein)
         self.ligand_indices = range(n_protein,n_protein+n_ligand)
         self.trajectory = traj.superpose(topology,atom_indices=self.protein_indices)
@@ -184,7 +186,7 @@ class MPIKCenters(object):
         if frame:
             rmsds = md.rmsd(self.trajectory,self.trajectory[frame],atom_indices=self.ligand_indices,precentered=True)
         else:
-            rmsds = np.zeros(self.trajectory.n_frames)
+            rmsds = md.rmsd(self.trajectory,self.empty,atom_indices=self.ligand_indices,precentered=True)
         
         return rmsds
 
