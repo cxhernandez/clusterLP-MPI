@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
 Assign clusters to a protein-ligand system with RMSD using separate sets of atoms for the
 alignment and distance computation.
