@@ -16,7 +16,7 @@ Contributers: Robert McGibbon
 """
 
 from __future__ import print_function
-import h5py, glob, optparse, os, sys, time, datetime, itertools, warnings
+import h5py, glob, argparse, os, sys, time, datetime, itertools, warnings
 if sys.version_info < (2, 7):
     print("Your Python interpreter is too old. Please consider upgrading.")
     sys.exit(1)
@@ -65,16 +65,16 @@ class timing(object):
         return False
 
 def parse_cmdln():
-    parser = optparse.OptionParser()
-    parser.add_option('-d', '--dir', dest='dir', type='string', help='Directory containing trajectories')
-    parser.add_option('-e', '--ext', dest='ext', type='string', help='File extension', default='dcd')
-    parser.add_option('-t', '--top', dest='topology', type='string', help='Topology File')
-    parser.add_option('-g', '--gens', dest='gens', type='string', help='Gens file', default="./Gens.lh5")
-    parser.add_option('-pi', '--protein_indices', dest='protein_indices', type='string', help='List of protein indices')
-    parser.add_option('-li', '--ligand_indices', dest='ligand_indices', type='string', help='List of ligand indices')
-    (options, args) = parser.parse_args()
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('-d', '--dir', dest='dir', type='string', help='Directory containing trajectories')
+    parser.add_argument('-e', '--ext', dest='ext', type='string', help='File extension', default='dcd')
+    parser.add_argument('-t', '--top', dest='topology', type='string', help='Topology File')
+    parser.add_argument('-g', '--gens', dest='gens', type='string', help='Gens file', default="./Gens.lh5")
+    parser.add_argument('-p', '--protein_indices', dest='protein_indices', type='string', help='List of protein indices')
+    parser.add_argument('-l', '--ligand_indices', dest='ligand_indices', type='string', help='List of ligand indices')
+    args = parser.parse_args()()
         
-    return (options, args)
+    return args
     
 def assign(trajectory, gens, pi, li):
     rmsds = np.zeros((gens.n_frames, trajectory.n_frames))
@@ -128,7 +128,7 @@ def main(gens, trajectories, idx, li, pi, topology, directory, ext):
     
 if __name__ == "__main__":
     
-    (options, args) = parse_cmdln()
+    options = parse_cmdln()
     trajectories = glob.glob(options['dir'] + "/*." + options['ext'])
     
     if RANK == 0:
