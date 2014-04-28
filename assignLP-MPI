@@ -68,7 +68,7 @@ def parse_cmdln():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('-d', '--dir', dest='dir',help='Directory containing trajectories')
     parser.add_argument('-e', '--ext', dest='ext', help='File extension', default='dcd')
-    parser.add_argument('-t', '--top', dest='topology', help='Topology File')
+    parser.add_argument('-td', '--top', dest='topology', help='Topology File')
     parser.add_argument('-g', '--gens', dest='gens', help='Gens file', default="./Gens.lh5")
     parser.add_argument('-pi', '--protein_indices', dest='protein_indices', help='List of protein indices')
     parser.add_argument('-li', '--ligand_indices', dest='ligand_indices', help='List of ligand indices')
