@@ -72,7 +72,7 @@ def parse_cmdln():
     parser.add_argument('-g', '--gens', dest='gens', help='Gens file', default="./Gens.lh5")
     parser.add_argument('-pi', '--protein_indices', dest='protein_indices', help='List of protein indices')
     parser.add_argument('-li', '--ligand_indices', dest='ligand_indices', help='List of ligand indices')
-    args = parser.parse_args()()
+    args = parser.parse_args()
         
     return args
     
