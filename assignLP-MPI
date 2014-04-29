@@ -152,7 +152,7 @@ if __name__ == "__main__":
     
     if options.protein_indices and options.ligand_indices:
         
-        pi, li = np.loadtxt(options.protein_indices), np.loadtxt(options.ligand_indices)
+        pi, li = np.loadtxt(options.protein_indices,dtype=int), np.loadtxt(options.ligand_indices,dtype=int)
         idx = np.union1d(pi, li)
         pi, li = range(len(pi)), range(len(pi),len(pi)+len(li))
         
