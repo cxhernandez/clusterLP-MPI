@@ -76,7 +76,7 @@ def parse_cmdln():
         
     return args
     
-def assign(trajectory, gens, pi, li):
+def assign(trajectory, gens, li):
     rmsds = np.zeros((gens.n_frames, trajectory.n_frames))
     for i, gen in enumerate(gens):
         rmsds[i, :] = md.rmsd(trajectory, gen, atom_indices = li, precentered=True)
@@ -96,7 +96,7 @@ def main(gens, trajectories, idx, li, pi, topology, directory, ext):
         n_frames = []
         for trajectory in trajectories:
             traj = md.load(trajectory, top = top, atom_indices = idx)
-            assignment, distance = assign(traj.superpose(topology, atom_indices = pi), gens)
+            assignment, distance = assign(traj.superpose(topology, atom_indices = pi), gens, li)
             assignments.append(assignment)
             distances.append(distance)
             n_frames.append(traj.n_frames)
