@@ -79,7 +79,7 @@ def parse_cmdln():
 def assign(trajectory, gens, li):
     rmsds = np.zeros((gens.n_frames, trajectory.n_frames))
     for i, gen in enumerate(gens):
-        rmsds[i, :] = md.rmsd(trajectory, gen, atom_indices = li, precentered=True)
+        rmsds[i, :] = md.rmsd(trajectory, gen, atom_indices = li)
     return rmsds.argmin(axis = 0), rmsds.min(axis = 0)
 
 def main(gens, trajectories, idx, li, pi, topology, directory, ext):
@@ -159,7 +159,7 @@ if __name__ == "__main__":
     else:
         idx = range(topology.n_atoms)
         
-    gens = md.load(options.gens, top=topology.topology, atom_indices=idx)
+    gens = md.load(options.gens, atom_indices=idx)
     
     trajectories = COMM.scatter(trajectories, root=0)
     
