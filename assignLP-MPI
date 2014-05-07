@@ -117,8 +117,8 @@ def main(gens, trajectories, idx, li, pi, topology, directory, ext):
         
         with timing('Writing assignments...'):
             for j, i in enumerate(order):
-                    A[j, :len(all_assignments[i])-1] = all_assignments[i]
-                    AD[j, :len(all_distances[i])-1] = all_distances[i]
+                    A[j, :len(all_assignments[i])] = all_assignments[i]
+                    AD[j, :len(all_distances[i])] = all_distances[i]
                     
             os.makedirs('Data/', exist_ok = True)        
             md.io.saveh('Data/Assignments.h5', A, completed_trajs = np.ones(n_trajectories, dtype=bool))
