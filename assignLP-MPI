@@ -139,6 +139,9 @@ if __name__ == "__main__":
                 parser.error('Please supply a directory.')
             if not options.topology:
                 parser.error('Please supply a topology file.')
+            if not trajectories:
+                print("No trajectories found.")
+                sys.exit(1)
         except SystemExit:
             if SIZE > 1:
                 COMM.Abort()
