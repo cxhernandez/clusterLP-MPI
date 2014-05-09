@@ -87,6 +87,9 @@ def printM(message, *args):
             print(message)
         else:
             print(message % args)
+            
+def rmsd(target, reference, idx):
+    return np.sqrt(np.sum(np.square(reference.xyz[0,idx,:] - target.xyz[:,idx,:]),axis=(2,1))/reference.n_atoms)
 
 class timing(object):
     "Context manager for printing performance"
@@ -184,9 +187,9 @@ class MPIKCenters(object):
         COMM.bcast(frame, root=targetRank)
         
         if frame:
-            rmsds = md.rmsd(self.trajectory,self.trajectory[frame],atom_indices=self.ligand_indices)
+            rmsds = rmsd(self.trajectory,self.trajectory[frame],self.ligand_indices)
         else:
-            rmsds = md.rmsd(self.trajectory,self.empty,atom_indices=self.ligand_indices)
+            rmsds = rmsd(self.trajectory,self.empty,self.ligand_indices)
         
         return rmsds
 
