@@ -52,7 +52,10 @@ def printM(message, *args):
             print(message)
         else:
             print(message % args)
-            
+
+def rmsd(target, reference, idx):
+    return np.sqrt(np.sum(np.square(reference.xyz[0,idx,:] - target.xyz[:,idx,:]),axis=(2,1))/reference.n_atoms)
+
 class timing(object):
     "Context manager for printing performance"
     def __init__(self, name):
@@ -79,8 +82,7 @@ def parse_cmdln():
 def assign(trajectory, gens, idx):
     rmsds = np.zeros((gens.n_frames, trajectory.n_frames))
     for i, gen in enumerate(gens):
-        trajectory.center_coordinates()
-        rmsds[i, :] = md.rmsd(trajectory, gen, atom_indices = idx, precentered=True)
+        rmsds[i, :] = rmsd(trajectory, gen, idx)
     return rmsds.argmin(axis = 0), rmsds.min(axis = 0)
 
 def main(gens, trajectories, idx, li, pi, topology, directory, ext):
