@@ -96,26 +96,27 @@ def main(gens, trajectories, idx, li, pi, topology, directory, ext):
         
         assignments = []
         distances = []
-        n_frames = []
+        #n_frames = []
         for trajectory in trajectories:
             traj = md.load(trajectory, top = top, atom_indices = idx)
             assignment, distance = assign(traj.superpose(topology, atom_indices = pi), gens, li)
             assignments.append(assignment)
             distances.append(distance)
-            n_frames.append(traj.n_frames)
+            #n_frames.append(traj.n_frames)
             
     COMM.Barrier()
-    all_assignments, all_distances, all_n_frames, all_n_traj, all_trajectory_files = COMM.gather(assignments, root = 0), COMM.gather(distances, root = 0), COMM.gather(n_frames, root = 0), COMM.gather(n_traj, root = 0), COMM.gather(trajectories, root = 0)
+    all_assignments, all_distances, all_n_traj, all_trajectory_files = COMM.gather(assignments, root = 0), COMM.gather(distances, root = 0), COMM.gather(n_traj, root = 0), COMM.gather(trajectories, root = 0)
     
     if RANK == 0:
         
-        n_trajectories, max_frames = np.sum(all_n_traj), np.max(np.max(all_n_frames))
-        A = -1*np.ones((n_trajectories, max_frames))
-        AD = -1*np.ones((n_trajectories, max_frames))
+        n_trajectories = np.sum(all_n_traj)
         all_trajectory_files = list(itertools.chain.from_iterable(all_trajectory_files))
         order = [all_trajectory_files.index(i) for i in glob.glob(directory + "/*." + ext)]
         all_assignments = list(itertools.chain.from_iterable(all_assignments))
         all_distances = list(itertools.chain.from_iterable(all_distances))
+        max_frames = max(map(len, all_assignments))
+        A = -1*np.ones((n_trajectories, max_frames))
+        AD = -1*np.ones((n_trajectories, max_frames))
         
         with timing('Writing assignments...'):
             for j, i in enumerate(order):
