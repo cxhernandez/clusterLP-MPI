@@ -125,7 +125,7 @@ def main(gens, trajectories, idx, li, pi, topology, directory, ext):
                     
             if not os.path.exists('Data/'):
                 os.makedirs('Data/')
-            md.io.saveh('Data/Assignments.h5', A, completed_trajs = np.ones(n_trajectories, dtype=bool))
+            md.io.saveh('Data/Assignments.h5', A.astype(int), completed_trajs = np.ones(n_trajectories, dtype=bool))
             md.io.saveh('Data/Assignments.h5.distances', AD, completed_trajs = np.ones(n_trajectories, dtype=bool))
             
         printM('Done!')
