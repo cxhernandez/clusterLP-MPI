@@ -143,8 +143,8 @@ class MPIKCenters(object):
         self.topology = topology
         self.empty = traj[0]
         self.empty.xyz = np.zeros(self.empty.xyz.shape)
-        self.protein_indices = range(n_protein)
-        self.ligand_indices = range(n_protein,n_protein+n_ligand)
+        self.protein_indices = np.arange(n_protein)
+        self.ligand_indices = np.arange(n_protein,n_protein+n_ligand)
         self.trajectory = traj.superpose(topology,atom_indices=self.protein_indices)
 
     def cluster(self, n_states=None, rmsd_cutoff=None):
