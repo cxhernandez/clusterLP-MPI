@@ -54,7 +54,7 @@ def printM(message, *args):
             print(message % args)
 
 def rmsd(target, reference, idx):
-    return np.sqrt(np.sum(np.square(reference.xyz[0,idx,:] - target.xyz[:,idx,:]),axis=(2,1))/reference.n_atoms)
+    return np.sqrt(np.sum(np.square(reference.xyz[0,idx,:] - target.xyz[:,idx,:]),axis=(2,1))/idx.shape[0])
 
 class timing(object):
     "Context manager for printing performance"
