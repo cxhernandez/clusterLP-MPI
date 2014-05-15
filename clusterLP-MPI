@@ -87,9 +87,6 @@ def printM(message, *args):
             print(message)
         else:
             print(message % args)
-            
-def rmsd(target, reference, idx):
-    return np.sqrt(np.sum(np.square(reference.xyz[0,idx,:] - target.xyz[:,idx,:]),axis=(2,1))/idx.shape[0])
 
 class timing(object):
     "Context manager for printing performance"
@@ -145,7 +142,7 @@ class MPIKCenters(object):
         self.empty.xyz = np.zeros(self.empty.xyz.shape)
         self.protein_indices = np.arange(n_protein)
         self.ligand_indices = np.arange(n_protein,n_protein+n_ligand)
-        self.trajectory = traj.superpose(topology,atom_indices=self.protein_indices)
+        self.trajectory = traj.superpose(topology,atom_indices=self.protein_indices).restrict_atoms(self.ligand_indices)
 
     def cluster(self, n_states=None, rmsd_cutoff=None):
         distances = np.empty(self.n_frames, np.float)
@@ -187,9 +184,9 @@ class MPIKCenters(object):
         COMM.bcast(frame, root=targetRank)
         
         if frame:
-            rmsds = rmsd(self.trajectory,self.trajectory[frame],self.ligand_indices)
+            rmsds = md.rmsd(self.trajectory,self.trajectory[frame])
         else:
-            rmsds = rmsd(self.trajectory,self.empty,self.ligand_indices)
+            rmsds = md.rmsd(self.trajectory,self.empty)
         
         return rmsds
 
