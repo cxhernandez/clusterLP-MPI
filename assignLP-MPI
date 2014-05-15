@@ -64,6 +64,9 @@ class timing(object):
         print("<RANK %d> PERFORMANCE [%s] : %0.3f seconds" % (RANK, self.name, end-self.start))
         return False
 
+def rmsd(traj, ref, idx):
+    return np.sqrt(np.sum(np.square(traj.xyz[:,idx,:] - ref.xyz[:,idx,:]),axis=(1,2))/idx.shape[0])
+
 def parse_cmdln():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('-td', '--dir', dest='dir',help='Directory containing trajectories')
@@ -76,20 +79,16 @@ def parse_cmdln():
         
     return args
     
-def assign(trajectory, gens, idx):
+def assign(trajectory, gens, pi, li):
+    trajectory.superpose(gens[0], atom_indices = pi)
     rmsds = np.zeros((gens.n_frames, trajectory.n_frames))
-    gens.restrict_atoms(idx)
-    trajectory.restrict_atoms(idx)
-    rmsd = md.rmsd
     for i, gen in enumerate(gens):
-        rmsds[i, :] = rmsd(trajectory, gen, idx)
+        rmsds[i, :] = rmsd(trajectory, gen, li)
     return rmsds.argmin(axis = 0), rmsds.min(axis = 0)
 
 def main(gens, trajectories, idx, li, pi, topology, directory, ext):
-    
-    top = topology.topology.copy()
-    topology.restrict_atoms(idx)
-    gens.superpose(topology, atom_indices=pi)
+
+    gens.superpose(gens[0], atom_indices=pi)
     n_traj = len(trajectories)
     
     with timing('Assigning...'):
@@ -99,8 +98,8 @@ def main(gens, trajectories, idx, li, pi, topology, directory, ext):
         load = md.load
         #n_frames = []
         for trajectory in trajectories:
-            traj = load(trajectory, top = top, atom_indices = idx)
-            assignment, distance = assign(traj.superpose(topology, atom_indices = pi), gens, li)
+            traj = load(trajectory, top = topology, atom_indices = idx)
+            assignment, distance = assign(traj, gens, pi, li)
             assignments.append(assignment)
             distances.append(distance)
             #n_frames.append(traj.n_frames)
@@ -177,4 +176,4 @@ if __name__ == "__main__":
     
     printM('Starting...')
     
-    main(gens, trajectories, idx, li, pi, topology, options.dir, options.ext)
+    main(gens, trajectories, idx, li, pi, topology.topology, options.dir, options.ext)
