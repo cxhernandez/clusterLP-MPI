@@ -80,8 +80,9 @@ def assign(trajectory, gens, idx):
     rmsds = np.zeros((gens.n_frames, trajectory.n_frames))
     gens.restrict_atoms(idx)
     trajectory.restrict_atoms(idx)
+    rmsd = md.rmsd
     for i, gen in enumerate(gens):
-        rmsds[i, :] = md.rmsd(trajectory, gen, idx)
+        rmsds[i, :] = rmsd(trajectory, gen, idx)
     return rmsds.argmin(axis = 0), rmsds.min(axis = 0)
 
 def main(gens, trajectories, idx, li, pi, topology, directory, ext):
@@ -95,9 +96,10 @@ def main(gens, trajectories, idx, li, pi, topology, directory, ext):
         
         assignments = []
         distances = []
+        load = md.load
         #n_frames = []
         for trajectory in trajectories:
-            traj = md.load(trajectory, top = top, atom_indices = idx)
+            traj = load(trajectory, top = top, atom_indices = idx)
             assignment, distance = assign(traj.superpose(topology, atom_indices = pi), gens, li)
             assignments.append(assignment)
             distances.append(distance)
