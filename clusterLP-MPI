@@ -138,12 +138,11 @@ class MPIKCenters(object):
 
         self.n_frames = traj.n_frames
         self.topology = topology
-        self.empty = traj[0]
-        self.empty.xyz = np.zeros(self.empty.xyz.shape)
         self.protein_indices = np.arange(n_protein)
         self.ligand_indices = np.arange(n_protein,n_protein+n_ligand)
         self.trajectory = traj.superpose(topology,atom_indices=self.protein_indices).restrict_atoms(self.ligand_indices)
-
+        self.empty = traj[0]
+        
     def cluster(self, n_states=None, rmsd_cutoff=None):
         distances = np.empty(self.n_frames, np.float)
         distances.fill(np.inf)
