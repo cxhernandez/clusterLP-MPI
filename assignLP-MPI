@@ -86,7 +86,7 @@ def assign(trajectory, gens, pi, li):
     for i, gen in enumerate(gens[1:]):
         rmsd = RMSD(trajectory, gen, li)
         minima = np.where(np.subtract(rmsd, minrmsd) < 0)
-        assignment[minima], minrmsd[minima]  =  i, rmsd[minima]
+        assignment[minima], minrmsd[minima]  =  i+1, rmsd[minima]
     return assignment, minrmsd
 
 def main(gens, trajectories, idx, li, pi, topology, directory, ext):
