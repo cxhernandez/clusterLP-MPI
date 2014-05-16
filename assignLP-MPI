@@ -64,7 +64,7 @@ class timing(object):
         print("<RANK %d> PERFORMANCE [%s] : %0.3f seconds" % (RANK, self.name, end-self.start))
         return False
 
-def rmsd(traj, ref, idx):
+def RMSD(traj, ref, idx):
     return np.sqrt(np.sum(np.square(traj.xyz[:,idx,:] - ref.xyz[:,idx,:]),axis=(1,2))/idx.shape[0])
 
 def parse_cmdln():
@@ -81,10 +81,13 @@ def parse_cmdln():
     
 def assign(trajectory, gens, pi, li):
     trajectory.superpose(gens[0], atom_indices = pi)
-    rmsds = np.zeros((gens.n_frames, trajectory.n_frames))
-    for i, gen in enumerate(gens):
-        rmsds[i, :] = rmsd(trajectory, gen, li)
-    return rmsds.argmin(axis = 0), rmsds.min(axis = 0)
+    minrmsd = RMSD(trajectory, gen, li)
+    assignment = np.zeros(gens.n_frames, dtype=int)
+    for i, gen in enumerate(gens[1:]):
+        rmsd = RMSD(trajectory, gen, li)
+        minima = np.where(np.subtract(rmsd, minrmsd) < 0)
+        minrmsd[minima], assignment[minima] =  rmsd[minima], i
+    return minrmsd, assignment
 
 def main(gens, trajectories, idx, li, pi, topology, directory, ext):
 
