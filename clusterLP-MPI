@@ -214,15 +214,19 @@ def main(protein_indices, ligand_indices, stride, trajectory_files, topology_fil
     with timing('Clustering'):
         kc = MPIKCenters(traj, topology, n_protein, n_ligand)
         centers = kc.cluster(n_states, rmsd_cutoff)
-    out_filename=out_filename[:-4] + '_' + str(RANK) + '.csv'
-    f=open(out_filename, 'w', 0)
-    print('\nSaving clusters centers to %s...' % out_filename)
-    for i in range(len(centers)):
-        if RANK == centers[i][0]:
-            trajid = np.max(np.where(centers[i][1] >= cumulative_lengths)[0])
-            frame = centers[i][1] - cumulative_lengths[trajid]
-            trj = trajectory_files[trajid]
-            f.write('%s, %d\n' % (trj, frame))
+        
+    COMM.Barrier()
+    out_filename = out_filename[:-4] + '.csv'
+    printM('\nSaving clusters centers to %s...' % out_filename)
+    with MPI.File.Open(COMM, out_filename, MPI.MODE_WRONLY|MPI.MODE_CREATE)  as f:
+        f.Set_atomicity(True) 
+        for i in range(len(centers)):
+            if RANK == centers[i][0]:
+                trajid = np.max(np.where(centers[i][1] >= cumulative_lengths)[0])
+                frame = centers[i][1] - cumulative_lengths[trajid]
+                trj = trajectory_files[trajid]
+                f.Write_shared('%s, %d\n' % (trj, frame))
+        f.Sync()
     printM('Done saving cluster centers.')
 
 if __name__ == '__main__':
