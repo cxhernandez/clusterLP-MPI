@@ -82,7 +82,7 @@ def parse_cmdln():
 def assign(trajectory, gens, pi, li):
     trajectory.superpose(gens[0], atom_indices = pi)
     minrmsd = RMSD(trajectory, gens[0], li)
-    assignment = np.zeros(gens.n_frames, dtype=int)
+    assignment = np.zeros(trajectory.n_frames, dtype=int)
     for i, gen in enumerate(gens[1:]):
         rmsd = RMSD(trajectory, gen, li)
         minima = np.where(np.subtract(rmsd, minrmsd) < 0)
