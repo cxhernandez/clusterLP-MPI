@@ -188,7 +188,8 @@ class MPIKCenters(object):
         if frame:
             rmsds = rmsd(self.trajectory.xyz,self.trajectory[frame].xyz,self.ligand_indices)
         else:
-            rmsds = np.zeros((self.n_frames,)) #rmsd(self.trajectory.xyz,self.empty,self.ligand_indices)
+            rmsds = np.empty(self.n_frames, np.float)
+            rmsds.fill(np.inf) #rmsd(self.trajectory.xyz,self.empty,self.ligand_indices)
         
         return rmsds
 
