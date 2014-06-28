@@ -183,7 +183,7 @@ class MPIKCenters(object):
         if RANK == targetRank:
             frame = targetIndex
             
-        COMM.bcast(frame, root=targetRank)
+        frame = COMM.bcast(frame, root=targetRank)
         
         if frame:
             rmsds = rmsd(self.trajectory.xyz,self.trajectory[frame].xyz,self.ligand_indices)
