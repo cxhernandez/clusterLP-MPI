@@ -181,15 +181,15 @@ class MPIKCenters(object):
             raise IndexError("No such index")
             
         if RANK == targetRank:
-            frame = targetIndex
+            frame = self.trajectory[targetIndex].xyz 
             
-        COMM.bcast(frame, root=targetRank)
+        frame = COMM.bcast(frame, root=targetRank)
         
-        if frame:
-            rmsds = rmsd(self.trajectory.xyz,self.trajectory[frame].xyz,self.ligand_indices)
-        else:
-            rmsds = np.empty(self.n_frames, np.float)
-            rmsds.fill(np.inf) #rmsd(self.trajectory.xyz,self.empty,self.ligand_indices)
+        #if frame:
+        rmsds = rmsd(self.trajectory.xyz,frame,self.ligand_indices)
+        #else:
+        #    rmsds = np.empty(self.n_frames, np.float)
+        #    rmsd(self.trajectory.xyz,self.empty,self.ligand_indices)
         
         return rmsds
 
