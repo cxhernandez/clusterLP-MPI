@@ -1,4 +1,4 @@
-clusterLP-MPI
+MSMbuilder MPITools
 =============
 ## Overview
 Cluster a protein-ligand system with RMSD using separate sets of atoms for the
