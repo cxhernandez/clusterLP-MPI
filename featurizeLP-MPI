@@ -205,7 +205,8 @@ def parse_cmdln():
     args = parser.parse_args()
     return args
 
-PATH = 'features5.h5'
+
+PATH = 'features.h5'
 
 
 def main(trajectories, top, sel, prot, lig):
