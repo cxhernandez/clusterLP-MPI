@@ -15,30 +15,36 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 ###############################################################################
 """
-Featurize a protein-ligand system in parallel and save to a H5DF file. Features 
-currently implemented include: ligand-protein RMSD, CoM Distance, alpha helicity, 
-phi angles, and psi angles; however, feature selection can be customized quite easily 
-in the collectFeatures method.
+Featurize a protein-ligand system in parallel and save to a H5DF file. Features
+currently implemented include: ligand-protein RMSD, CoM Distance,
+alpha helicity, phi angles, and psi angles; however, feature selection can be
+customized quite easily in the collectFeatures method.
 
 This script uses hybrid MPI/OpenMP paralleism in addition to highly optimized
-SIMD vectorization within the compute kernels and asynchronous I/O. Using multiple MPI processes
-requires running this command using your MPI implementation's process manager,
-e.g. `mpirun`, `mpiexec`, or `aprun`. The number of OpenMP threads can be
-controled by setting the OMP_NUM_THREADS environment variable. (e.g.
-$ export OMP_NUM_THREADS=4; mpirun -np 16 featurizeLP-MPI <options>)
+SIMD vectorization within the compute kernels and asynchronous I/O.
+Using multiple MPI processes requires running this command using your MPI
+implementation's process manager, e.g. `mpirun`, `mpiexec`, or `aprun`.
+The number of OpenMP threads can be controled by setting the OMP_NUM_THREADS
+environment variable.
+(e.g. $ export OMP_NUM_THREADS=4; mpirun -np 16 featurizeLP-MPI <options>)
 
 Author: Carlos Xavier Hernández
 """
 
-#-----------------------------------
-# Imports
-#-----------------------------------
+# -----------------------------------
+#              Imports
+# -----------------------------------
 from __future__ import print_function
-import glob, argparse, os, sys, time, datetime, itertools, warnings
-from os.path import basename, dirname
-if sys.version_info < (2, 7):
-    print("Your Python interpreter is too old. Please consider upgrading.")
-    sys.exit(1)
+import re
+import glob
+import argparse
+import os
+import sys
+import time
+import itertools
+from contextlib import closing
+from os.path import basename, splitext
+
 import numpy as np
 
 try:
@@ -46,7 +52,7 @@ try:
     from mdtraj import io
 except ImportError:
     print("This package requires the latest development version of MDTraj")
-    print("which can be downloaded from https://github.com/rmcgibbo/mdtraj")
+    print("which can be downloaded from https://pypi.python.org/pypi/mdtraj")
     sys.exit(1)
 
 try:
@@ -56,159 +62,201 @@ except:
     print("from https://pypi.python.org/pypi/mpi4py")
     sys.exit(1)
 
-#-----------------------------------
-# Globals
-#-----------------------------------
+try:
+    from msmbuilder.featurizer import DihedralFeaturizer, ContactFeaturizer
+except:
+    print("This package requires msmbuilder, which can be downloaded")
+    print("from https://pypi.python.org/pypi/msmbuilder")
+    sys.exit(1)
+
+# -----------------------------------
+#              Globals
+# -----------------------------------
 COMM = MPI.COMM_WORLD
 RANK = COMM.rank
 SIZE = COMM.size - 1
 STATUS = MPI.Status()
 
-#-----------------------------------
-# Methods
-#-----------------------------------
 
-def enum(*sequential, **named):
-    """
-        Hacked Enum type for python
-    """
-	enums = dict(zip(sequential, range(len(sequential))), **named)
-	return type('Enum', (), enums)
-    
-tags = enum('READY', 'DONE', 'EXIT', 'START')
-
-def getAtomsInChain(chainIdx):
-    """
-        Method to retrieve atom indices from a given chain in a PDB
-    """
-    return [atom.index for atom in ref.topology.atoms if (atom.residue.chain.index == chainIdx)]
-
-def rmsd(traj,ref,idx):
-    """
-        RMSD calculator without superposition
-    """
-    return np.sqrt(np.sum(np.square(traj[:,idx,:] - ref[:,idx,:]),axis=(1,2))/idx.shape[0])
-    
-def distance(traj,idx1,idx2):
-    """
-        Retrieves center of mass distance between protein and ligand
-    """
-    return np.sqrt(np.sum((md.compute_center_of_mass(traj.atom_slice(idx1)) - md.compute_center_of_mass(traj.atom_slice(idx2)))**2,axis=1))
-    
-def helicity(traj,idx):
-    """
-        Retrieves percent helicity in ligand
-    """
-    dssp = md.compute_dssp(traj.atom_slice(idx))
-    return np.sum(dssp=='H',axis=1)/float(dssp.shape[1])
-
-def phi(traj,idx):
-    """
-        Retrieves phi angles
-    """
-    return md.compute_phi(traj.atom_slice(idx))[1].T
-    
-def psi(traj,idx):
-    """
-        Retrieves psi angles
-    """
-    return md.compute_psi(traj.atom_slice(idx))[1].T
-
-def createFeatureSet(*args):
-    """
-        Given a tuple of features, this will return a numpy matrix of (features, n_samples)
-    """
-    return np.vstack(args)
-    
-def collectFeatures(trajectories,ref,sel,prot,lig):
-    features = []
-    for trajectory in trajectories:
-        with timing('Computing Features for ' + trajectory + '...'):
-            traj = md.load_lh5(trajectory)
-            # Feature selection
-            features.append(
-                createFeatureSet(  
-                                    rmsd(traj.xyz,ref.xyz,sel),
-                                    distance(traj,prot,lig),
-                                    helicity(traj,lig),
-                                    phi(traj,lig),
-                                    psi(traj,lig)
-                )
-            )
-    return features      
-
-class timing(object):
+class Timing(object):
     "Context manager for printing performance"
+
     def __init__(self, name):
         self.name = name
+
     def __enter__(self):
         self.start = time.time()
+
     def __exit__(self, ty, val, tb):
         end = time.time()
-        print("<RANK %d> PERFORMANCE [%s] : %0.3f seconds" % (RANK, self.name, end-self.start))
+        print("<RANK %d> PERFORMANCE [%s] : %0.3f seconds" % (
+            RANK, self.name, end - self.start))
         return False
 
+
+# -----------------------------------
+#              Methods
+# -----------------------------------
+
+
+def modify(name):
+    return 'traj_' + re.sub('-', '_', splitext(basename(name))[0])
+
+
+def enum(*sequential, **named):
+    enums = dict(zip(sequential, range(len(sequential))), **named)
+    return type('Enum', (), enums)
+
+tags = enum('READY', 'DONE', 'EXIT', 'START', 'WRITE')
+
+
+def rmsd(traj, ref, idx):
+    return np.sqrt(np.sum(np.square(traj[:, idx, :] - ref[:, idx, :]),
+                          axis=(1, 2)) / np.shape(idx)[0])
+
+
+def ldcom(traj, idx1, idx2):
+    return np.sqrt(
+        np.sum((md.compute_center_of_mass(traj.atom_slice(idx1)) -
+                md.compute_center_of_mass(traj.atom_slice(idx2)))**2,
+               axis=1))
+
+
+def end2end(traj, pair):
+    return md.compute_distances(traj, atom_pairs=[pair])
+
+
+def helicity(traj, idx):
+    dssp = md.compute_dssp(traj.atom_slice(idx))
+    return np.sum(dssp == 'H', axis=1) / float(dssp.shape[1])
+
+
+def contact(traj, idx):
+    cf = ContactFeaturizer()
+    return cf.partial_transform(traj.atom_slice(idx)).T
+
+
+def dihedral(traj, idx):
+    df = DihedralFeaturizer(types=['phi', 'psi'], sincos=True)
+    return df.partial_transform(traj.atom_slice(idx)).T
+
+
+def createFeatureSet(n_frames, *args):
+    args = tuple([arg if arg.shape[0] != n_frames else arg.T for arg in args])
+    return np.vstack(args)
+
+
+def collectFeatures(trajectories, ref, sel, prot, lig):
+    res1 = np.unique([ref.topology.atom(i).residue.index for i in sel])
+    res2 = np.unique([ref.topology.atom(i).residue.index for i in prot])
+    contacts = md.compute_contacts(ref, contacts=list(
+        itertools.product(res1, res2)), scheme='closest-heavy')
+    native = contacts[1][(contacts[0] < .5)[0, :], :]
+    interface = np.array(
+        [atom.index for atom in ref.topology.atoms
+         if atom.residue.index in native[:, 1]])
+    hprot = [i for i in prot if ref.topology.atom(
+        i).element.symbol in ['C', 'N', 'O', 'S']]
+    iprot = [at for at in interface if at in hprot]
+    pair = np.array([i for i in sel if ref.topology.atom(i).is_backbone])
+    for trajectory in trajectories:
+        with Timing('Computing Features for ' + trajectory + '...'):
+            traj = md.load_lh5(trajectory).superpose(ref, atom_indices=hprot)
+            yield (modify(trajectory), createFeatureSet(
+                traj.n_frames,
+                rmsd(traj.xyz, ref.xyz, sel),  # ligand-protein RMSD
+                md.rmsd(traj, ref, atom_indices=sel),  # ligand-to-xtal RMSD
+                rmsd(traj.xyz, ref.xyz, prot),  # protein-to-xtal RMSD
+                rmsd(traj.xyz, ref.xyz, interface),  # interface-to-xtal RMSD
+                ldcom(traj, iprot, sel),  # ligand-to-interface center of mass distance
+                end2end(traj, pair[[0, -1]]),  # end-to-end distance
+                helicity(traj, lig),  # % ligand helicity
+                contact(traj, lig),  # residue-residue distances
+                dihedral(traj, lig),  # phi-psi dihedral angles
+            ))
+
+
+def save_to_hdf5(path, arr_name, arr):
+    while True:
+        COMM.send(None, dest=0, tag=tags.WRITE)
+        response = COMM.recv(source=0, tag=MPI.ANY_TAG, status=STATUS)
+        tag = STATUS.Get_tag()
+        if response and tag == tags.WRITE:
+            io.saveh(path, **{arr_name: arr})
+            break
+        time.sleep(1)
+
+
 def parse_cmdln():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('-td', '--dir', dest='dir',help='Directory containing trajectories')
-    parser.add_argument('-ext', '--ext', dest='ext', help='File extension', default='xtc')
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('-td', '--dir', dest='dir',
+                        help='Directory containing trajectories')
+    parser.add_argument('-ext', '--ext', dest='ext',
+                        help='File extension', default='xtc')
     parser.add_argument('-top', '--top', dest='topology', help='Topology File')
-    parser.add_argument('-p', '--protein', dest='prot', help='Protein selection',default=0,type=int)
-    parser.add_argument('-l', '--ligand', dest='lig', help='Ligand selection',default=1,type=int)
-    parser.add_argument('-r', '--rmsd', dest='sel', help='Indices to calculate RMSD with', default='all')
-    parser.add_argument('-o', '--out', dest='path', help='Path to output H5DF', default='features.h5')
-    args = parser.parse_args()                                
+    parser.add_argument('-p', '--protein', dest='prot',
+                        help='Protein selection', default=0, type=int)
+    parser.add_argument('-l', '--ligand', dest='lig',
+                        help='Ligand selection', default=1, type=int)
+    parser.add_argument('-r', '--rmsd', dest='sel',
+                        help='Indices to calculate RMSD with', default='all')
+    args = parser.parse_args()
     return args
 
-def main(trajectories,top,sel,prot,lig,path):
-    # Master Instructions
+PATH = 'features5.h5'
+
+
+def main(trajectories, top, sel, prot, lig):
     if RANK == 0:
-        #Initialize counters
-    	closed_workers = task_index = tasks_completed = 0
-        
-        # Remove H5DF file if it already exists
-    	if os.path.exists(path):
-    		os.remove(path)
-        
-    	while closed_workers < SIZE:
-    		data = COMM.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=STATUS)
-    		source = STATUS.Get_source()
-    		tag = STATUS.Get_tag()
-            # Assign trajectories to workers if they are ready
-    		if tag == tags.READY:
-    			if task_index < len(trajectories):
-    				COMM.send(trajectories[task_index], dest=source, tag=tags.START)
-    				task_index += 1
-    			else:
-    				COMM.send(None, dest=source, tag=tags.EXIT)
-            # Save feature data to H5DF as workers finish
-    		elif tag == tags.DONE:
-    			with timing('Saving feature set %s...' % (source)):
-    				for set in data:
-    					exec 'io.saveh(path,arr_%s=set)' % (tasks_completed)
-    					tasks_completed += 1
-            # Count finished workers
-    		elif tag == tags.EXIT:
-    			closed_workers += 1
-    	print('Done.')
-    # Worker Instructions
+        closed_workers = 0
+        task_index = 0
+        tasks_completed = 0
+        write_lock = SIZE*[False]
+
+        while closed_workers < SIZE:
+            COMM.recv(source=MPI.ANY_SOURCE,
+                      tag=MPI.ANY_TAG, status=STATUS)
+            source = STATUS.Get_source()
+            tag = STATUS.Get_tag()
+            if tag == tags.READY:
+                if task_index < len(trajectories):
+                    COMM.send(trajectories[task_index],
+                              dest=source, tag=tags.START)
+                    task_index += 1
+                else:
+                    COMM.send(None, dest=source, tag=tags.EXIT)
+            elif tag == tags.WRITE:
+                write_lock[source - 1] = not any(write_lock)
+                COMM.send(write_lock[source - 1],
+                          dest=source, tag=tags.WRITE)
+            elif tag == tags.DONE:
+                write_lock[source - 1] = False
+                tasks_completed += 1
+            elif tag == tags.EXIT:
+                closed_workers += 1
+        print('Done.')
     else:
-    	while True:
-            # Get Assignment
-		    COMM.send(None, dest=0, tag=tags.READY)
-		    task = COMM.recv(source=0, tag=MPI.ANY_TAG, status=STATUS)
-		    tag = STATUS.Get_tag()
-		    
-            # Start Featurization
-		    if tag == tags.START:
-			    ref = md.load(top)
-			    prot, lig, sel = getAtomsInChain(prot), getAtomsInChain(lig), ref.topology.select(sel)
-			    result = collectFeatures(task,ref,sel,prot,lig)
-			    COMM.send(result, dest=0, tag=tags.DONE)
-            # Break
-		    elif tag == tags.EXIT:
-			    break
+        while True:
+            COMM.send(None, dest=0, tag=tags.READY)
+            task = COMM.recv(source=0, tag=MPI.ANY_TAG, status=STATUS)
+            tag = STATUS.Get_tag()
+            if tag == tags.START:
+                ref = md.load(top)
+                prot = [atom.index for atom in ref.topology.atoms if (
+                    atom.residue.chain.index == prot)]
+                lig = [atom.index for atom in ref.topology.atoms if (
+                    atom.residue.chain.index == lig)]
+                sel = ref.topology.select(sel)
+                features = collectFeatures(task, ref, sel, prot, lig)
+                for i, feature_set in enumerate(features):
+                    save_to_hdf5(PATH, feature_set[0], feature_set[1])
+                    COMM.send(None, dest=0, tag=tags.DONE)
+            elif tag == tags.EXIT:
+                break
         COMM.send(None, dest=0, tag=tags.EXIT)
+
 
 if __name__ == "__main__":
     options = parse_cmdln()
@@ -216,22 +264,28 @@ if __name__ == "__main__":
         trajectories = glob.glob(options.dir + "/*" + options.ext + "*")
         try:
             if not options.dir:
-                parser.error('Please supply a directory.')
+                raise ValueError('Please supply a directory.')
             if not options.topology:
-                parser.error('Please supply a topology file.')
+                raise ValueError('Please supply a topology file.')
             if not trajectories:
                 print("No trajectories found.")
                 sys.exit(1)
             if len(trajectories) < SIZE:
                 print("There are more nodes than trajectories.")
                 sys.exit(1)
+            if os.path.isfile(PATH):
+                with closing(io.loadh(PATH)) as data:
+                    trajectories = [traj for traj in trajectories if modify(
+                        traj) not in data.keys()]
         except SystemExit:
             if SIZE > 1:
                 COMM.Abort()
             exit()
+
         trajectories = [trajectories[i::SIZE] for i in range(SIZE)]
 
     else:
         trajectories = None
 
-    main(trajectories,options.topology,options.sel,options.prot,options.lig,options.path)
+    main(trajectories, options.topology, options.sel,
+         options.prot, options.lig)
